@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "ai-action-assistant": {
+      "command": "python",
+      "args": ["run_mcp.py"],
+      "cwd": "/path/to/MY NEW CHATBOT",
+      "env": {
+        "GROQ_API_KEY": "your-groq-api-key",
+        "NEWS_API_KEY": "your-news-api-key",
+        "EMAIL_USER": "your-email@gmail.com",
+        "EMAIL_PASS": "your-gmail-app-password"
+      }
+    }
+  }
+}

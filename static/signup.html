@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Create Account — AI Action Assistant</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&display=swap" rel="stylesheet">
+<style>
+:root {
+  --sky-50:#f0f9ff;--sky-100:#e0f2fe;--sky-200:#bae6fd;--sky-300:#7dd3fc;
+  --sky-400:#38bdf8;--sky-500:#0ea5e9;--sky-600:#0284c7;--sky-700:#0369a1;
+  --text:#0c1a2e;--muted:#5b7fa6;--muted2:#8dafc8;
+  --glass:rgba(255,255,255,0.68);
+  --glass-border:rgba(186,230,253,0.6);
+  --mono:'Geist Mono',monospace;
+  --sans:'DM Sans',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;font-family:var(--sans);overflow:hidden}
+
+body{
+  background:#daf0ff;
+  display:flex;align-items:center;justify-content:center;
+  position:relative; min-height:100vh;
+}
+
+.bg-layer{
+  position:fixed;inset:0;z-index:0;
+  background:
+    radial-gradient(ellipse 70% 55% at 80% 15%, rgba(186,230,253,0.85) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 50% at 15% 85%, rgba(125,211,252,0.65) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 40% at 50% 50%, rgba(224,242,254,0.7) 0%, transparent 50%),
+    linear-gradient(150deg, #aee3ff 0%, #cceeff 30%, #e4f6ff 55%, #c0e8ff 80%, #b0dcff 100%);
+  animation: bgBreath 14s ease-in-out infinite;
+}
+@keyframes bgBreath{0%,100%{opacity:1}50%{opacity:0.93}}
+
+.aurora{position:fixed;border-radius:50%;pointer-events:none;mix-blend-mode:screen;filter:blur(90px);z-index:0}
+.a1{width:550px;height:550px;background:radial-gradient(circle,rgba(56,189,248,0.32) 0%,transparent 70%);top:-180px;right:-120px;animation:aF1 22s ease-in-out infinite}
+.a2{width:480px;height:480px;background:radial-gradient(circle,rgba(125,211,252,0.28) 0%,transparent 70%);bottom:-130px;left:-80px;animation:aF2 28s ease-in-out infinite}
+.a3{width:300px;height:300px;background:radial-gradient(circle,rgba(186,230,253,0.4) 0%,transparent 70%);top:35%;left:5%;animation:aF3 16s ease-in-out infinite}
+.a4{width:220px;height:220px;background:radial-gradient(circle,rgba(224,242,254,0.55) 0%,transparent 70%);bottom:25%;right:5%;animation:aF4 19s ease-in-out infinite}
+@keyframes aF1{0%,100%{transform:translate(0,0)}40%{transform:translate(-50px,50px)}70%{transform:translate(30px,-30px)}}
+@keyframes aF2{0%,100%{transform:translate(0,0)}40%{transform:translate(60px,-40px)}70%{transform:translate(-25px,55px)}}
+@keyframes aF3{0%,100%{transform:translate(0,0)}50%{transform:translate(30px,-20px)}}
+@keyframes aF4{0%,100%{transform:translate(0,0)}50%{transform:translate(-20px,25px)}}
+
+canvas#sparks{position:fixed;inset:0;pointer-events:none;z-index:0;opacity:0.65}
+
+.ring{position:fixed;border-radius:50%;pointer-events:none;border:1px solid rgba(56,189,248,0.18);animation:ringExpand linear infinite;z-index:0}
+@keyframes ringExpand{0%{transform:scale(0);opacity:0.55}100%{transform:scale(1);opacity:0}}
+
+.card{
+  width:100%;max-width:440px;
+  padding:48px 48px 44px;
+  background:var(--glass);
+  backdrop-filter:blur(40px) saturate(1.8) brightness(1.05);
+  -webkit-backdrop-filter:blur(40px) saturate(1.8) brightness(1.05);
+  border:1px solid var(--glass-border);
+  border-radius:36px;
+  margin:20px;
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.5) inset,
+    0 2px 0 rgba(255,255,255,0.8) inset,
+    0 20px 80px rgba(14,165,233,0.14),
+    0 8px 32px rgba(0,0,0,0.05);
+  animation:cardRise 0.8s cubic-bezier(0.22,1,0.36,1);
+  position:relative;z-index:2;overflow:hidden;
+}
+@keyframes cardRise{from{opacity:0;transform:translateY(48px) scale(0.94)}to{opacity:1;transform:translateY(0) scale(1)}}
+
+.card::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,transparent,rgba(125,211,252,0.9),rgba(56,189,248,1),rgba(14,165,233,0.9),transparent);
+  background-size:200% 100%;animation:shineSlide 3.5s linear infinite;
+}
+@keyframes shineSlide{0%{background-position:0%}100%{background-position:200%}}
+.card::after{content:'';position:absolute;top:0;left:0;right:0;height:100px;background:linear-gradient(180deg,rgba(255,255,255,0.38),transparent);pointer-events:none}
+
+.logo{display:flex;align-items:center;gap:16px;margin-bottom:36px}
+.logo-mark{
+  width:52px;height:52px;
+  background:linear-gradient(145deg,#38bdf8,#0ea5e9,#0284c7);
+  border-radius:18px;
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:14px;font-weight:500;color:#fff;
+  flex-shrink:0;
+  box-shadow:0 8px 28px rgba(14,165,233,0.5),0 2px 8px rgba(14,165,233,0.3),inset 0 1px 0 rgba(255,255,255,0.3);
+  animation:markPulse 4s ease infinite;overflow:hidden;
+}
+.logo-mark::after{content:'✦';font-size:22px;font-family:serif}
+@keyframes markPulse{0%,100%{box-shadow:0 8px 28px rgba(14,165,233,0.5),inset 0 1px 0 rgba(255,255,255,0.3)}50%{box-shadow:0 8px 36px rgba(14,165,233,0.7),0 0 0 8px rgba(14,165,233,0.07),inset 0 1px 0 rgba(255,255,255,0.3)}}
+.logo-text{font-size:18px;font-weight:600;color:var(--text);letter-spacing:-0.025em;line-height:1.2}
+.logo-sub{font-size:10px;color:var(--muted2);font-family:var(--mono);margin-top:4px;letter-spacing:0.1em}
+
+h1{font-size:28px;font-weight:600;color:var(--text);letter-spacing:-0.03em;margin-bottom:8px;line-height:1.15}
+.subtitle{font-size:14px;color:var(--muted);margin-bottom:32px;line-height:1.6;font-weight:300}
+
+.field{margin-bottom:20px;position:relative}
+label{display:block;font-size:11px;font-weight:500;color:var(--muted2);margin-bottom:9px;font-family:var(--mono);letter-spacing:0.1em;text-transform:uppercase;transition:color 0.2s}
+.field:focus-within label{color:var(--sky-500)}
+
+input{
+  width:100%;
+  background:rgba(255,255,255,0.55);
+  border:1.5px solid rgba(186,230,253,0.7);
+  border-radius:16px;padding:15px 20px;
+  color:var(--text);font-size:15px;font-family:var(--sans);font-weight:400;
+  outline:none;transition:all 0.3s cubic-bezier(0.4,0,0.2,1);
+}
+input:hover{border-color:rgba(56,189,248,0.6);background:rgba(255,255,255,0.7)}
+input:focus{
+  border-color:var(--sky-400);background:rgba(255,255,255,0.92);
+  box-shadow:0 0 0 4px rgba(14,165,233,0.1),0 6px 20px rgba(14,165,233,0.08);
+  transform:translateY(-1px);
+}
+input::placeholder{color:var(--muted2);font-weight:300}
+
+.hint{font-size:11px;color:var(--muted2);margin-top:7px;font-family:var(--mono)}
+
+.btn{
+  width:100%;
+  background:linear-gradient(135deg,#0ea5e9 0%,#38bdf8 50%,#0284c7 100%);
+  background-size:200% 200%;
+  border:none;border-radius:16px;padding:16px;
+  color:#fff;font-size:15px;font-weight:600;font-family:var(--sans);
+  cursor:pointer;margin-top:8px;
+  transition:all 0.25s cubic-bezier(0.4,0,0.2,1);
+  box-shadow:0 8px 28px rgba(14,165,233,0.45),0 2px 8px rgba(14,165,233,0.2),inset 0 1px 0 rgba(255,255,255,0.25);
+  letter-spacing:0.02em;position:relative;overflow:hidden;
+  animation:btnGradShift 4s ease infinite;
+}
+@keyframes btnGradShift{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+.btn::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,0.25),transparent 60%);border-radius:inherit}
+.btn:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 12px 36px rgba(14,165,233,0.55),0 4px 16px rgba(14,165,233,0.25)}
+.btn:active:not(:disabled){transform:translateY(0)}
+.btn:disabled{opacity:0.5;cursor:not-allowed;transform:none}
+.btn.loading::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.2),transparent);animation:btnShimmer 1.2s ease-in-out infinite}
+@keyframes btnShimmer{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+
+.error{background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.2);color:#b91c1c;border-radius:14px;padding:12px 16px;font-size:13px;margin-bottom:20px;display:none;animation:errShake 0.4s cubic-bezier(0.36,0.07,0.19,0.97)}
+@keyframes errShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-5px)}80%{transform:translateX(4px)}}
+
+.divider{border:none;border-top:1px solid rgba(186,230,253,0.5);margin:30px 0}
+.footer{text-align:center;font-size:13.5px;color:var(--muted);font-weight:300}
+.footer a{color:var(--sky-500);text-decoration:none;font-weight:500;transition:all 0.2s;position:relative}
+.footer a::after{content:'';position:absolute;bottom:-1px;left:0;right:0;height:1px;background:var(--sky-400);transform:scaleX(0);transition:transform 0.25s;transform-origin:left}
+.footer a:hover::after{transform:scaleX(1)}
+</style>
+</head>
+<body>
+
+<div class="bg-layer"></div>
+<div class="aurora a1"></div>
+<div class="aurora a2"></div>
+<div class="aurora a3"></div>
+<div class="aurora a4"></div>
+<canvas id="sparks"></canvas>
+
+<div class="card">
+  <div class="logo">
+    <div class="logo-mark"></div>
+    <div>
+      <div class="logo-text">AI Action Assistant</div>
+      <div class="logo-sub">PRODUCTION · RAILWAY</div>
+    </div>
+  </div>
+  <h1>Create account</h1>
+  <p class="subtitle">Start using your personal AI assistant</p>
+  <div class="error" id="error-msg"></div>
+  <form onsubmit="handleSignup(event)">
+    <div class="field">
+      <label>Full Name</label>
+      <input type="text" id="name" placeholder="Yash" autocomplete="name">
+    </div>
+    <div class="field">
+      <label>Email</label>
+      <input type="email" id="email" placeholder="you@example.com" required autocomplete="email">
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <input type="password" id="password" placeholder="••••••••" required autocomplete="new-password" minlength="8">
+      <div class="hint">Minimum 8 characters</div>
+    </div>
+    <button class="btn" type="submit" id="submit-btn">Create Account →</button>
+  </form>
+  <hr class="divider">
+  <div class="footer">Already have an account? <a href="/login">Sign in</a></div>
+</div>
+
+<script>
+(function(){
+  const c = document.getElementById('sparks'), ctx = c.getContext('2d');
+  let W, H, pts = [];
+  function resize(){ W = c.width = innerWidth; H = c.height = innerHeight; }
+  resize(); window.addEventListener('resize', resize);
+  for(let i = 0; i < 80; i++) pts.push({
+    x: Math.random()*3000, y: Math.random()*2000,
+    r: Math.random()*2.5+0.3,
+    vx: (Math.random()-0.5)*0.3, vy: (Math.random()-0.5)*0.3,
+    a: Math.random()*0.4+0.08,
+    hue: Math.round(Math.random()*20+195),
+    pulse: Math.random()*Math.PI*2, pulseSpeed: Math.random()*0.02+0.01
+  });
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    pts.forEach(p=>{
+      p.x+=p.vx; p.y+=p.vy; p.pulse+=p.pulseSpeed;
+      if(p.x<0)p.x=W; if(p.x>W)p.x=0;
+      if(p.y<0)p.y=H; if(p.y>H)p.y=0;
+      const a = p.a*(0.5+0.5*Math.sin(p.pulse));
+      ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+      ctx.fillStyle=`hsla(${p.hue},90%,65%,${a})`; ctx.fill();
+    });
+    requestAnimationFrame(draw);
+  }
+  draw();
+})();
+
+(function(){
+  function spawnRing(){
+    const r = document.createElement('div');
+    r.className='ring';
+    const sz = 200+Math.random()*400;
+    r.style.cssText = `width:${sz}px;height:${sz}px;left:${Math.random()*100}vw;top:${Math.random()*100}vh;margin-left:-${sz/2}px;margin-top:-${sz/2}px;animation-duration:${4+Math.random()*4}s;animation-delay:${Math.random()*2}s`;
+    document.body.appendChild(r);
+    setTimeout(()=>r.remove(), 10000);
+  }
+  for(let i=0;i<4;i++) setTimeout(spawnRing, i*1500);
+  setInterval(spawnRing, 3000);
+})();
+
+async function handleSignup(e){
+  e.preventDefault();
+  const btn=document.getElementById('submit-btn'),err=document.getElementById('error-msg');
+  err.style.display='none';
+  const name=document.getElementById('name').value.trim();
+  const email=document.getElementById('email').value.trim();
+  const password=document.getElementById('password').value;
+  if(password.length<8){showError('Password must be at least 8 characters.');return}
+  btn.disabled=true;btn.textContent='Creating account…';btn.classList.add('loading');
+  try{
+    const res=await fetch('/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password,name:name||null})});
+    const data=await res.json();
+    if(!res.ok){showError(data.detail||'Registration failed.');return}
+    localStorage.setItem('ai_token',data.access_token);
+    localStorage.setItem('ai_user_id',data.user_id);
+    localStorage.setItem('ai_email',data.email);
+    localStorage.setItem('ai_name',data.name||data.email.split('@')[0]);
+    window.location.href='/dashboard';
+  }catch{showError('Could not reach the server. Is it running?')}
+  finally{btn.disabled=false;btn.textContent='Create Account →';btn.classList.remove('loading')}
+}
+function showError(msg){const el=document.getElementById('error-msg');el.textContent=msg;el.style.display='block'}
+
+(async function(){
+  const token = localStorage.getItem('ai_token');
+  if (!token) return;
+  try {
+    const res = await fetch('/auth/me', { headers: { 'Authorization': `Bearer ${token}` } });
+    if (res.ok) window.location.href = '/dashboard';
+    else { localStorage.removeItem('ai_token'); localStorage.removeItem('ai_user_id'); localStorage.removeItem('ai_email'); localStorage.removeItem('ai_name'); }
+  } catch { window.location.href = '/dashboard'; }
+})();
+</script>
+</body>
+</html>

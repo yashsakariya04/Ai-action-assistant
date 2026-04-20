@@ -1,0 +1,34 @@
+# Secrets — NEVER commit these
+.env
+token.pickle
+credentials.json
+
+# Utility scripts that output secrets — keep local only
+scripts/encode_token.py
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+*.egg-info/
+
+# Database — too large for GitHub
+chroma_db/
+*.db
+*.sqlite3
+
+# Uploads — temporary files
+uploads/
+/tmp/
+
+# Logs
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/

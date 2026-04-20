@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Profile — AI Action Assistant</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&display=swap" rel="stylesheet">
+<style>
+:root {
+  --sky-400:#38bdf8;--sky-500:#0ea5e9;--sky-600:#0284c7;
+  --bg:#eef8ff;--surface:rgba(255,255,255,0.72);--border:rgba(186,230,253,0.55);
+  --text:#0c1a2e;--muted:#5b7fa6;--muted2:#8dafc8;
+  --accent:var(--sky-500);--danger:#ef4444;
+  --mono:'Geist Mono',monospace;--sans:'DM Sans',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{min-height:100%;background:var(--bg);color:var(--text);font-family:var(--sans)}
+body::before{
+  content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(ellipse 70% 50% at 15% 5%,rgba(186,230,253,0.5) 0%,transparent 60%),
+    radial-gradient(ellipse 50% 40% at 85% 95%,rgba(125,211,252,0.35) 0%,transparent 55%);
+}
+
+/* ── Nav ── */
+.nav{
+  position:sticky;top:0;z-index:10;
+  background:rgba(255,255,255,0.7);backdrop-filter:blur(24px);
+  border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:14px;padding:0 28px;height:56px;
+}
+.nav-logo{
+  width:30px;height:30px;border-radius:9px;
+  background:linear-gradient(145deg,#38bdf8,#0ea5e9,#0284c7);
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:13px;color:#fff;flex-shrink:0;
+}
+.nav-logo::after{content:'✦';font-family:serif}
+.nav-title{font-size:14px;font-weight:600;color:var(--text);flex:1}
+.nav-back{
+  display:flex;align-items:center;gap:6px;
+  background:none;border:1px solid var(--border);border-radius:9px;
+  padding:6px 14px;font-size:13px;color:var(--muted);cursor:pointer;
+  font-family:var(--sans);transition:all 0.15s;
+}
+.nav-back:hover{color:var(--sky-600);border-color:rgba(56,189,248,0.4);background:rgba(224,242,254,0.6)}
+
+/* ── Page layout ── */
+.page{max-width:680px;margin:0 auto;padding:36px 20px 60px;position:relative;z-index:1}
+
+/* ── Profile card ── */
+.profile-card{
+  background:var(--surface);backdrop-filter:blur(24px);
+  border:1px solid var(--border);border-radius:20px;
+  overflow:hidden;margin-bottom:20px;
+}
+.profile-banner{
+  height:100px;
+  background:linear-gradient(135deg,rgba(56,189,248,0.25),rgba(14,165,233,0.15),rgba(186,230,253,0.3));
+}
+.profile-header{padding:0 28px 24px;position:relative}
+.avatar-wrap{
+  position:relative;display:inline-block;
+  margin-top:-44px;margin-bottom:12px;
+}
+.avatar{
+  width:88px;height:88px;border-radius:50%;
+  border:4px solid var(--bg);
+  background:linear-gradient(145deg,#38bdf8,#0ea5e9);
+  display:flex;align-items:center;justify-content:center;
+  font-size:32px;font-weight:600;color:#fff;font-family:var(--mono);
+  overflow:hidden;box-shadow:0 4px 20px rgba(14,165,233,0.25);
+}
+.avatar img{width:100%;height:100%;object-fit:cover}
+.avatar-edit{
+  position:absolute;bottom:2px;right:2px;
+  width:26px;height:26px;border-radius:50%;
+  background:var(--sky-500);border:2px solid var(--bg);
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;font-size:12px;color:#fff;
+  transition:background 0.15s;
+}
+.avatar-edit:hover{background:var(--sky-600)}
+
+.profile-name{font-size:22px;font-weight:600;letter-spacing:-0.02em;margin-bottom:3px}
+.profile-email{font-size:13px;color:var(--muted);font-family:var(--mono);margin-bottom:8px}
+.profile-bio{font-size:14px;color:var(--muted);line-height:1.6;max-width:480px}
+.profile-meta{
+  display:flex;gap:20px;margin-top:14px;flex-wrap:wrap;
+}
+.meta-item{font-size:12px;color:var(--muted2);font-family:var(--mono);display:flex;align-items:center;gap:5px}
+
+/* ── Edit form ── */
+.edit-card{
+  background:var(--surface);backdrop-filter:blur(24px);
+  border:1px solid var(--border);border-radius:20px;
+  padding:24px 28px;margin-bottom:20px;
+}
+.section-title{font-size:13px;font-weight:600;color:var(--text);margin-bottom:18px;letter-spacing:-0.01em}
+.field{margin-bottom:16px}
+.field label{display:block;font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted2);font-family:var(--mono);margin-bottom:6px}
+.field input,.field textarea{
+  width:100%;background:rgba(255,255,255,0.6);
+  border:1.5px solid rgba(186,230,253,0.6);border-radius:10px;
+  padding:10px 14px;font-size:14px;font-family:var(--sans);color:var(--text);
+  outline:none;transition:border-color 0.2s,box-shadow 0.2s;resize:none;
+}
+.field input:focus,.field textarea:focus{
+  border-color:rgba(56,189,248,0.6);
+  box-shadow:0 0 0 3px rgba(14,165,233,0.07);
+}
+.field input:disabled{opacity:0.55;cursor:not-allowed}
+.field-hint{font-size:11px;color:var(--muted2);margin-top:4px;font-family:var(--mono)}
+.save-btn{
+  background:linear-gradient(135deg,#0ea5e9,#38bdf8);
+  border:none;border-radius:10px;padding:10px 24px;
+  font-size:14px;font-weight:500;color:#fff;cursor:pointer;
+  font-family:var(--sans);transition:all 0.2s;
+  box-shadow:0 4px 14px rgba(14,165,233,0.35);
+}
+.save-btn:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(14,165,233,0.45)}
+.save-btn:disabled{opacity:0.6;cursor:not-allowed;transform:none}
+
+/* ── Google connect card ── */
+.google-card{
+  background:var(--surface);backdrop-filter:blur(24px);
+  border:1px solid var(--border);border-radius:20px;
+  padding:20px 28px;margin-bottom:20px;
+  display:flex;align-items:center;gap:16px;
+}
+.google-icon{font-size:28px;flex-shrink:0}
+.google-info{flex:1}
+.google-info-title{font-size:14px;font-weight:500;color:var(--text);margin-bottom:2px}
+.google-info-sub{font-size:12px;color:var(--muted);font-family:var(--mono)}
+.google-btn{
+  background:none;border:1px solid var(--border);border-radius:9px;
+  padding:8px 16px;font-size:13px;font-family:var(--sans);
+  color:var(--muted);cursor:pointer;transition:all 0.15s;white-space:nowrap;
+}
+.google-btn.connected{color:var(--sky-600);border-color:rgba(56,189,248,0.4);background:rgba(224,242,254,0.4)}
+.google-btn:hover{border-color:rgba(56,189,248,0.5);color:var(--sky-600)}
+
+/* ── Danger zone ── */
+.danger-card{
+  background:rgba(255,255,255,0.5);backdrop-filter:blur(24px);
+  border:1px solid rgba(239,68,68,0.15);border-radius:20px;
+  padding:20px 28px;
+}
+.danger-title{font-size:13px;font-weight:600;color:#dc2626;margin-bottom:6px}
+.danger-sub{font-size:13px;color:var(--muted);margin-bottom:14px}
+.logout-btn{
+  background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.25);
+  border-radius:9px;padding:9px 20px;font-size:13px;font-family:var(--sans);
+  color:#dc2626;cursor:pointer;transition:all 0.15s;font-weight:500;
+}
+.logout-btn:hover{background:rgba(239,68,68,0.1);border-color:rgba(239,68,68,0.4)}
+
+/* ── Toast ── */
+.toast{
+  position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(20px);
+  background:rgba(14,165,233,0.9);color:#fff;
+  padding:10px 22px;border-radius:10px;font-size:13px;font-family:var(--sans);
+  opacity:0;transition:all 0.3s;pointer-events:none;z-index:100;
+  backdrop-filter:blur(12px);
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.error{background:rgba(239,68,68,0.9)}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-logo"></div>
+  <div class="nav-title">AI Action Assistant</div>
+  <button class="nav-back" onclick="window.location.href='/dashboard'">← Back to Chat</button>
+</nav>
+
+<div class="page">
+
+  <!-- Profile card -->
+  <div class="profile-card">
+    <div class="profile-banner"></div>
+    <div class="profile-header">
+      <div class="avatar-wrap">
+        <div class="avatar" id="avatar-display">
+          <span id="avatar-initials">?</span>
+        </div>
+        <div class="avatar-edit" title="Change avatar URL" onclick="promptAvatarUrl()">✎</div>
+      </div>
+      <div class="profile-name" id="display-name">Loading…</div>
+      <div class="profile-email" id="display-email"></div>
+      <div class="profile-bio" id="display-bio"></div>
+      <div class="profile-meta">
+        <div class="meta-item">📅 Joined <span id="display-joined">—</span></div>
+        <div class="meta-item" id="google-meta" style="display:none">🔗 Google connected</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit form -->
+  <div class="edit-card">
+    <div class="section-title">Edit Profile</div>
+    <div class="field">
+      <label>Full Name</label>
+      <input type="text" id="input-name" placeholder="Your name" maxlength="100">
+    </div>
+    <div class="field">
+      <label>Email</label>
+      <input type="email" id="input-email" disabled>
+      <div class="field-hint">Email cannot be changed</div>
+    </div>
+    <div class="field">
+      <label>Bio</label>
+      <textarea id="input-bio" rows="3" placeholder="Tell us a bit about yourself…" maxlength="300"></textarea>
+    </div>
+    <button class="save-btn" id="save-btn" onclick="saveProfile()">Save Changes</button>
+  </div>
+
+  <!-- Google account -->
+  <div class="google-card">
+    <div class="google-icon">🔗</div>
+    <div class="google-info">
+      <div class="google-info-title">Google Account</div>
+      <div class="google-info-sub" id="google-status-text">Not connected</div>
+    </div>
+    <button class="google-btn" id="google-action-btn" onclick="handleGoogleAction()">Connect</button>
+  </div>
+
+  <!-- Danger zone -->
+  <div class="danger-card">
+    <div class="danger-title">Sign Out</div>
+    <div class="danger-sub">You will be redirected to the login page.</div>
+    <button class="logout-btn" onclick="logout()">Sign Out</button>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const BASE = window.location.origin;
+let googleConnected = false;
+
+function showToast(msg, isError = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (isError ? ' error' : '');
+  setTimeout(() => t.className = 'toast', 2800);
+}
+
+function formatDate(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
+}
+
+function renderAvatar(avatarUrl, name) {
+  const wrap = document.getElementById('avatar-display');
+  const initials = document.getElementById('avatar-initials');
+  if (avatarUrl) {
+    wrap.innerHTML = `<img src="${avatarUrl}" alt="avatar" onerror="this.parentElement.innerHTML='<span id=\\'avatar-initials\\'>${getInitials(name)}</span>'">`;
+  } else {
+    initials.textContent = getInitials(name);
+  }
+}
+
+function getInitials(name) {
+  if (!name) return '?';
+  return name.trim().split(/\s+/).map(w => w[0]).slice(0,2).join('').toUpperCase();
+}
+
+async function loadProfile() {
+  const token = localStorage.getItem('ai_token');
+  if (!token) { window.location.href = '/login'; return; }
+  try {
+    const res = await fetch('/auth/me', { headers: { 'Authorization': `Bearer ${token}` } });
+    if (!res.ok) { window.location.href = '/login'; return; }
+    const u = await res.json();
+
+    document.getElementById('display-name').textContent = u.name || 'No name set';
+    document.getElementById('display-email').textContent = u.email;
+    document.getElementById('display-bio').textContent = u.bio || '';
+    document.getElementById('display-joined').textContent = formatDate(u.created_at);
+    document.getElementById('input-name').value = u.name || '';
+    document.getElementById('input-email').value = u.email;
+    document.getElementById('input-bio').value = u.bio || '';
+    renderAvatar(u.avatar_url, u.name);
+
+    // Store for later
+    localStorage.setItem('ai_name', u.name || '');
+    localStorage.setItem('ai_avatar', u.avatar_url || '');
+  } catch { showToast('Failed to load profile', true); }
+}
+
+async function loadGoogleStatus() {
+  const token = localStorage.getItem('ai_token');
+  try {
+    const res = await fetch('/auth/google/status', { headers: { 'Authorization': `Bearer ${token}` } });
+    const data = await res.json();
+    const btn = document.getElementById('google-action-btn');
+    const statusText = document.getElementById('google-status-text');
+    const meta = document.getElementById('google-meta');
+    googleConnected = data.connected;
+    if (data.connected) {
+      statusText.textContent = data.google_email || 'Connected';
+      btn.textContent = 'Disconnect';
+      btn.className = 'google-btn connected';
+      meta.style.display = 'flex';
+    } else {
+      statusText.textContent = 'Not connected — enables Gmail & Calendar';
+      btn.textContent = 'Connect';
+      btn.className = 'google-btn';
+      meta.style.display = 'none';
+    }
+  } catch {}
+}
+
+async function saveProfile() {
+  const token = localStorage.getItem('ai_token');
+  const btn = document.getElementById('save-btn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    const body = {
+      name: document.getElementById('input-name').value.trim() || null,
+      bio:  document.getElementById('input-bio').value.trim() || null,
+    };
+    const res = await fetch('/auth/me', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error();
+    const u = await res.json();
+    document.getElementById('display-name').textContent = u.name || 'No name set';
+    document.getElementById('display-bio').textContent = u.bio || '';
+    localStorage.setItem('ai_name', u.name || '');
+    showToast('Profile saved ✓');
+  } catch { showToast('Failed to save', true); }
+  btn.disabled = false; btn.textContent = 'Save Changes';
+}
+
+function promptAvatarUrl() {
+  const current = localStorage.getItem('ai_avatar') || '';
+  const url = prompt('Enter image URL for your avatar (leave blank to remove):', current);
+  if (url === null) return; // cancelled
+  const token = localStorage.getItem('ai_token');
+  fetch('/auth/me', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+    body: JSON.stringify({ avatar_url: url.trim() || null }),
+  }).then(r => r.json()).then(u => {
+    renderAvatar(u.avatar_url, u.name);
+    localStorage.setItem('ai_avatar', u.avatar_url || '');
+    showToast('Avatar updated ✓');
+  }).catch(() => showToast('Failed to update avatar', true));
+}
+
+function handleGoogleAction() {
+  if (googleConnected) {
+    if (!confirm('Disconnect your Google account? This will disable Gmail and Calendar features.')) return;
+    const token = localStorage.getItem('ai_token');
+    fetch('/auth/google/disconnect', { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } })
+      .then(() => { showToast('Google account disconnected'); loadGoogleStatus(); });
+  } else {
+    const token = localStorage.getItem('ai_token');
+    window.location.href = `/auth/google/connect?token=${token}&return_to=profile`;
+  }
+}
+
+function logout() {
+  ['ai_token','ai_user_id','ai_email','ai_name','ai_avatar'].forEach(k => localStorage.removeItem(k));
+  window.location.href = '/login';
+}
+
+// Handle redirect back from Google OAuth
+(function() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('google_connected')) {
+    history.replaceState({}, '', '/profile');
+    loadProfile();
+    loadGoogleStatus();
+  } else if (params.get('google_error')) {
+    history.replaceState({}, '', '/profile');
+    showToast('Google connection failed: ' + params.get('google_error'), true);
+  }
+})();
+
+loadProfile();
+loadGoogleStatus();
+</script>
+</body>
+</html>
