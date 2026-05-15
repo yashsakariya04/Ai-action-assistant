@@ -147,114 +147,82 @@ def _call_groq(messages, max_tokens=800, temperature=0.4):
 # ─────────────────────────────────────────────────────────────
 
 BASE_SYSTEM_PROMPT = """
-You are a smart, warm, and highly capable personal AI assistant — think of yourself as a brilliant friend who happens to know everything.
+You are AI Action Assistant — a professional AI productivity assistant built for real-world task execution.
 Current date and time: {datetime} (internal use only — never show this unless the user explicitly asks)
 
-YOUR PERSONALITY:
-- Warm, natural, and conversational — like talking to a knowledgeable friend who genuinely cares
-- Confident and direct — give the answer first, context after
-- Occasionally use light, tasteful wit to make responses enjoyable — but stay professional
-- Never robotic, never stiff, never over-formal
-- Celebrate wins with the user ("Great, your email is on its way!")
-
-RESPONSE QUALITY RULES:
-- Lead with the direct answer — never bury it
-- Keep answers concise by default (1–4 sentences). Go longer only when the user asks for detail
-- Use natural language, not corporate speak
-- NEVER start with "Certainly!", "Of course!", "Great question!", "Sure!", "Absolutely!" or similar hollow filler
-- NEVER say "I am an AI" or reference your nature unless directly asked
-- NEVER show the current date/time unless the user explicitly asks for it
-- Use bullet points only when listing 3+ distinct items — not for single-item answers
-- Match the user's energy — casual question = casual answer, technical question = precise answer
-- For factual questions, lead with the fact, then add a sentence of useful context
-- End responses with a natural follow-up offer when it makes sense ("Want me to search for more?")
-
-ACCURACY RULES:
-- Answer accurately using your knowledge and any provided context
-- If context is provided, prioritise it over general knowledge
-- Never fabricate facts, email addresses, names, or execution results
-- If you genuinely don't know something, say so briefly and naturally — then offer an alternative
-- Maintain context across conversation turns
-
+You are precise, concise, and helpful. You do NOT engage in casual small talk.
+Respond in 1-3 sentences maximum unless detail is required.
+Never say "Great question!", "Certainly!", "Of course!", "Sure!", "Absolutely!" or any filler phrases.
+Never say "I am an AI" or reference your nature unless directly asked.
+Never show the current date/time unless the user explicitly asks.
+Lead with the direct answer — never bury it.
+For factual questions, lead with the fact, then add one sentence of useful context.
+If context is provided, prioritise it over general knowledge.
+Never fabricate facts, email addresses, names, or execution results.
+If you don't know something, say so briefly and offer to search the web.
+When asked what you can do, list your actual capabilities: send emails via Gmail, schedule Google Calendar events, fetch live weather, get news headlines, search the web, and summarize uploaded documents (PDF/DOCX/XLSX/TXT).
 """.strip()
 
 
-ACTION_PLANNER_PROMPT = """
-You are a strict intent classifier and argument extractor for an AI assistant.
-Output a SINGLE valid JSON object only. No markdown, no explanation, no extra text.
+INTENT_CLASSIFIER_PROMPT = """
+You are a strict intent classifier for an AI assistant. Your only job is to output a
+JSON object identifying the user's intent. Output ONLY valid JSON. No prose. No markdown.
+No explanation. No code fences.
 
-Current date: {date}
+INTENT TYPES (use EXACTLY these strings):
+- "email"      : user wants to send an email or compose a message
+- "calendar"   : user wants to schedule, create, or set a reminder/event/meeting
+- "weather"    : user wants weather or temperature info for any location
+- "news"       : user wants news headlines or recent articles on a topic
+- "web_search" : user asks about a person, fact, entity, definition, or current event
+- "summarize"  : user wants a document or file summarized
+- "rag"        : user asks something from the assistant's knowledge base
+- "cancel"     : user wants to cancel the current action
+- "greeting"   : user is saying hello or greeting
 
-Supported actions: email | calendar | news | weather | web_search | summarize | rag
+STRICT ROUTING RULES:
+1. "who is X", "what is X", "tell me about X" → ALWAYS "web_search"
+2. Any message with send/mail/email keyword → ALWAYS "email"
+3. Any message with schedule/meeting/reminder/event keyword → ALWAYS "calendar"
+4. Greetings (hi/hello/hey) → ALWAYS "greeting"
+5. Cancel words alone → ALWAYS "cancel"
+6. Weather/temperature queries → ALWAYS "weather"
+7. News/headlines queries → ALWAYS "news"
+8. Only use "rag" if NO other rule matches
 
-If the user selected specific services, PRIORITIZE those over others.
-
-ACTION RULES:
-- email      : compose and send an email
-- calendar   : BOOK/SCHEDULE a calendar event with a specific time
-- news       : news headlines or recent events on a topic
-- summarize  : summarize text, document, or URL
-- weather    : current weather for a city
-- web_search : search the internet
-- rag        : everything else — questions, knowledge, greetings, planning advice
-
-SERVICE SELECTION:
-- news selected + any location/topic -> news
-- weather selected + any location -> weather
-- search selected + any text -> web_search
-- email selected + any message -> email
-- calendar selected + any event -> calendar
-- summarize selected + any content -> summarize
-
-CRITICAL:
-- "plan a party" -> rag (advice, not booking)
-- "book a party Sunday 3pm" -> calendar (explicit time given)
-- "what time is it?" -> rag
-
-ARGUMENT SCHEMAS:
-
-email: {{"action":"email","arguments":{{"to":[<@ email only, else null>],"recipient_name":<name or null>,"subject":<subject or null>,"body":<full email body or null>}}}}
-RULE: "to" MUST be null unless user typed an actual @ email address. NEVER fabricate.
-
-calendar: {{"action":"calendar","arguments":{{"title":<title>,"datetime_phrase":<EXACT date+time words user wrote, null if none>,"duration":<hours int default 1>,"description":null,"location":null}}}}
-RULE: NEVER invent a date. datetime_phrase is null ONLY if user gave zero time words.
-
-news: {{"action":"news","arguments":{{"topic":<topic, "general" if none>}}}}
-
-weather: {{"action":"weather","arguments":{{"city":<city name, null if not mentioned>}}}}
-
-web_search: {{"action":"web_search","arguments":{{"query":<search query>}}}}
-
-summarize: {{"action":"summarize","arguments":{{"url":<http url or null>,"content":<inline text or null>,"file_path":null}}}}
-
-rag: {{"action":"rag","arguments":{{}}}}
-""".strip()
-EMAIL_DRAFTER_PROMPT = """
-You are a professional email drafting assistant.
-
-Draft a complete, polished, professional email based on the information below.
-
-Recipient name : {recipient_name}
-Purpose / context: {context}
-Sender name: {sender_name}
-
-FORMAT RULES (strictly follow):
-- Subject line: clear, specific, professional (max 10 words)
-- Opening: "Dear [Name],"
-- Para 1: purpose of the email (1-2 sentences)
-- Para 2: details / context (2-3 sentences)
-- Para 3: call to action or next step (1-2 sentences)
-- Closing: "Thank you for your time. I look forward to your response."
-- Sign-off: "Best regards," then sender name
-
-Return a JSON object with exactly these keys:
+OUTPUT FORMAT (strict):
 {{
-  "subject": "<subject line>",
-  "body": "<full email body as plain text with \\n for line breaks>"
+  "action": "<intent_type>",
+  "confidence": <0.0 to 1.0>,
+  "extracted": {{
+    "to": "<email address if mentioned, else null>",
+    "subject": "<subject if mentioned, else null>",
+    "body_hint": "<any body content hint if mentioned, else null>",
+    "title": "<event title if mentioned, else null>",
+    "date": "<date expression if mentioned, else null>",
+    "time": "<time expression if mentioned, else null>",
+    "location": "<city/location if mentioned, else null>",
+    "query": "<search query or news topic if mentioned, else null>"
+  }}
 }}
 
-No markdown. No explanation. Only the JSON.
+User message: {user_message}
+Conversation context (last 3 turns): {conversation_context}
 """.strip()
+
+# Legacy alias
+ACTION_PLANNER_PROMPT = INTENT_CLASSIFIER_PROMPT
+EMAIL_BODY_GENERATION_PROMPT = """
+You are writing a professional email body. Write ONLY the email body content.
+No subject line. No "To:" or "From:" headers. No sign-off unless natural.
+Be concise, professional, and appropriate for the context provided.
+Subject: {subject}
+Recipient: {recipient}
+Context/Hint: {hint}
+Write the email body now:
+""".strip()
+
+EMAIL_DRAFTER_PROMPT = EMAIL_BODY_GENERATION_PROMPT
 
 
 CALENDAR_DESCRIPTION_PROMPT = """
@@ -272,19 +240,62 @@ Return only the description text, no JSON.
 
 
 MISSING_FIELD_PROMPT = """
-You are an AI assistant collecting missing details to complete a task for the user.
+You are an AI assistant collecting missing details to complete a task.
 
 Task type: {action}
 Already collected: {collected}
 Still needed: {missing}
 
-Write a single short, warm, and natural message asking only for the missing information.
-- Be friendly and conversational, not robotic
+Write ONE short, direct sentence asking only for the FIRST missing item.
 - Do not use field names like "datetime_phrase" — use plain human language
-- Keep it to one sentence if possible
-- Output only the message text, nothing else
+- Do not repeat a question already asked in the conversation
+- Do not ask for multiple fields at once
+- Output only the question text, nothing else
 """.strip()
 
+
+# ─────────────────────────────────────────────────────────────
+# CONSTANTS
+# ─────────────────────────────────────────────────────────────
+
+AUTO_GENERATE_SIGNALS = frozenset([
+    "auto", "generate", "write it", "write it yourself", "make it", "create it",
+    "at your own", "yourself", "auto generate", "auto-generate", "make content",
+    "birthday wishes", "professional", "formal", "casual", "short", "brief",
+    "use that", "from weather", "from the weather", "weather data", "get it from",
+    "use previous", "use above", "use last result", "from news", "use news",
+    "you write", "you decide", "just write", "write something", "draft it",
+    "make a content",
+])
+
+# FIXED: E-3 — signals that mean "use the last weather/news/search result as email body"
+LAST_RESULT_SIGNALS = frozenset([
+    "get it from weather", "use weather data", "use the weather", "from weather api",
+    "from the weather", "use previous result", "use that data", "use above data",
+    "use that", "use it", "from previous", "from above", "use last result",
+    "get from news", "use news data", "use the news", "from news",
+    "use search result", "from search", "use web result",
+])
+
+# FIXED: C-3 — strong new-intent keywords that should clear stale pending state
+STRONG_INTENT_KEYWORDS = frozenset([
+    "send", "email", "mail", "schedule", "remind", "reminder", "meeting",
+    "weather", "news", "search", "summarize", "summarise", "book", "create event",
+    "add to calendar", "set up", "compose", "forward",
+])
+
+# Signals that cancel any pending action
+CANCEL_SIGNALS = frozenset([
+    "exit", "cancel", "stop", "quit", "nevermind", "never mind",
+    "forget it", "abort", "nope", "no thanks", "drop it", "skip it",
+])
+
+# Capability query patterns
+CAPABILITY_PATTERNS = frozenset([
+    "what can you do", "what are your features", "help", "capabilities",
+    "what do you support", "what can you help", "what do you do",
+    "show me what you can do", "list your features",
+])
 
 # ─────────────────────────────────────────────────────────────
 # PUBLIC FUNCTIONS — each uses its assigned tier
@@ -305,6 +316,45 @@ def get_llm_response(query: str, context: str = "", history: list = None) -> str
     return _call_primary(messages, temperature=0.6, max_tokens=800)
 
 
+def _format_conversation_context(history: list | None) -> str:
+    if not history:
+        return "(none)"
+    lines = []
+    for turn in history[-6:]:
+        role = turn.get("role", "user").upper()
+        lines.append(f"{role}: {turn.get('content', '')}")
+    return "\n".join(lines) if lines else "(none)"
+
+
+def _extracted_to_arguments(action: str, extracted: dict) -> dict:
+    """Map classifier extracted fields to action arguments."""
+    extracted = extracted or {}
+    args = {}
+    if action == "email":
+        to = extracted.get("to")
+        if to:
+            args["to"] = [to] if isinstance(to, str) else to
+        if extracted.get("subject"):
+            args["subject"] = extracted["subject"]
+        if extracted.get("body_hint"):
+            args["body"] = extracted["body_hint"]
+    elif action == "calendar":
+        if extracted.get("title"):
+            args["title"] = extracted["title"]
+        date_p = extracted.get("date") or ""
+        time_p = extracted.get("time") or ""
+        if date_p or time_p:
+            args["datetime_phrase"] = f"{date_p} {time_p}".strip()
+    elif action == "weather":
+        if extracted.get("location"):
+            args["city"] = extracted["location"]
+    elif action == "news":
+        args["topic"] = extracted.get("query") or "general"
+    elif action == "web_search":
+        args["query"] = extracted.get("query") or ""
+    return {k: v for k, v in args.items() if v is not None}
+
+
 def plan_action(user_message: str, history: list = None, selected_services: list = None) -> dict:
     """Intent detection + argument extraction — TIER 1 PRIMARY (critical accuracy)."""
     selected_services = selected_services or []
@@ -322,22 +372,34 @@ def plan_action(user_message: str, history: list = None, selected_services: list
                 f"If the user message could match any of these services, strongly prefer them over 'rag'."
             )
 
-    prompt   = ACTION_PLANNER_PROMPT.format(date=_now()["date"]) + service_hint
+    prompt = INTENT_CLASSIFIER_PROMPT.format(
+        user_message=user_message,
+        conversation_context=_format_conversation_context(history),
+    ) + service_hint
     messages = [{"role": "system", "content": prompt}]
-    if history:
-        messages.extend(history[-2:])  # last 1 exchange only — planner needs minimal context
     messages.append({"role": "user", "content": user_message})
 
-    raw = _call_primary(messages, temperature=0.0, max_tokens=200)  # JSON never needs 600
+    raw = _call_primary(messages, temperature=0.0, max_tokens=250)
 
     try:
-        plan   = json.loads(_extract_json(raw))
+        plan = json.loads(_extract_json(raw))
         action = plan.get("action", "rag")
-        args   = {k: v for k, v in (plan.get("arguments", {}) or {}).items() if v is not None}
-        return {"action": action, "arguments": args}
+        extracted = plan.get("extracted", {}) or {}
+        args = _extracted_to_arguments(action, extracted)
+        legacy = plan.get("arguments", {}) or {}
+        for k, v in legacy.items():
+            if v is not None:
+                args[k] = v
+        return {"action": action, "arguments": args, "confidence": plan.get("confidence", 0.5)}
     except Exception as e:
         log.warning("Planner parse error: %s | Raw: %.200s", e, raw)
         return {"action": "rag", "arguments": {}}
+
+
+def classify_intent_with_llm(user_message: str, history: list = None, selected_services: list = None) -> str:
+    """Return intent action string from LLM classifier."""
+    plan = plan_action(user_message, history=history, selected_services=selected_services)
+    return plan.get("action", "rag")
 
 
 def detect_confirmation(user_message: str, pending_action: str) -> str:
@@ -371,23 +433,28 @@ def detect_confirmation(user_message: str, pending_action: str) -> str:
         return "new_info"
 
 
-def draft_email(recipient_name: str, context: str, sender_name: str = "Assistant") -> dict:
-    """Professional email drafting — TIER 2 MEDIUM (writing quality)."""
-    prompt   = EMAIL_DRAFTER_PROMPT.format(
-        recipient_name=recipient_name or "there",
-        context=context,
-        sender_name=sender_name,
+def generate_email_body(subject: str, recipient: str, hint: str) -> str:
+    """Auto-generate email body — TIER 2 MEDIUM."""
+    prompt = EMAIL_BODY_GENERATION_PROMPT.format(
+        subject=subject or "Message",
+        recipient=recipient or "there",
+        hint=hint or "",
     )
     messages = [
         {"role": "system", "content": prompt},
-        {"role": "user",   "content": "Draft the email now."},
+        {"role": "user", "content": "Write the email body now."},
     ]
-    raw = _call_medium(messages, temperature=0.3, max_tokens=600)
-    try:
-        result = json.loads(_extract_json(raw))
-        return {"subject": result.get("subject", ""), "body": result.get("body", "")}
-    except Exception:
-        return {"subject": "Message", "body": raw}
+    return _call_medium(messages, temperature=0.3, max_tokens=600).strip()
+
+
+def draft_email(recipient_name: str, context: str, sender_name: str = "Assistant") -> dict:
+    """Professional email drafting — TIER 2 MEDIUM (writing quality)."""
+    body = generate_email_body(
+        subject="Message",
+        recipient=recipient_name or "there",
+        hint=context,
+    )
+    return {"subject": "Message", "body": body}
 
 
 def draft_event_description(title: str, context: str) -> str:
@@ -409,7 +476,28 @@ def generate_missing_field_prompt(
     current_args: dict,
     history: list = None,
 ) -> str:
-    """Natural language field collection — TIER 1 PRIMARY (conversational quality)."""
+    # FIXED: A-4 (response format) — deterministic spec-format prompts, no LLM free-form text
+    first = missing_fields[0] if missing_fields else ""
+
+    if action == "email":
+        questions = {
+            "to":      "Who should I send this email to? Please provide the email address.",
+            "subject": "What should be the subject of this email?",
+            "body":    "What should the email say? (or say 'auto-generate' and I'll write it for you)",
+        }
+        question = questions.get(first, f"Please provide the {first}.")
+        return f"\u25cb PENDING \u00b7 EMAIL\n{question}\n\u2192 Type your reply to continue"
+
+    if action == "calendar":
+        questions = {
+            "title":           "What is the title or purpose of this event?",
+            "datetime_phrase": "What date should I schedule this for? (e.g., tomorrow, next Friday, May 20)",
+            "time":            "What time should this be scheduled for? (e.g., 3 PM, 10:30 AM)",
+        }
+        question = questions.get(first, f"Please provide the {first}.")
+        return f"\u25cb PENDING \u00b7 CALENDAR\n{question}\n\u2192 Type your reply to continue"
+
+    # Fallback for other action types
     labels = {
         "to":              "recipient's email address",
         "subject":         "email subject",
@@ -417,28 +505,11 @@ def generate_missing_field_prompt(
         "title":           "event title",
         "datetime_phrase": "date and time",
         "duration":        "duration (in hours)",
-        "description":     "event agenda or description",
-        "location":        "location or meeting link",
-        "recipient_name":  "recipient's name",
+        "city":            "city name",
+        "query":           "search query",
     }
-    collected = {labels.get(k, k): v for k, v in current_args.items() if v is not None}
-    missing   = [labels.get(f, f) for f in missing_fields]
-
-    prompt = MISSING_FIELD_PROMPT.format(
-        action=action,
-        collected=json.dumps(collected) if collected else "none yet",
-        missing=", ".join(missing),
-    )
-    try:
-        messages = [{"role": "system", "content": prompt}]
-        if history:
-            messages.extend(history[-4:])
-        messages.append({"role": "user", "content": "Generate the question."})
-        return _call_light(messages, temperature=0.3, max_tokens=150).strip()
-    except Exception:
-        if len(missing) == 1:
-            return f"Could you please provide the {missing[0]}?"
-        return f"Could you please provide the following: {', '.join(missing)}?"
+    label = labels.get(first, first)
+    return f"Could you please provide the {label}?"
 
 
 # ─────────────────────────────────────────────────────────────

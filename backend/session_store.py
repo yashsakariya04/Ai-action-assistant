@@ -9,12 +9,25 @@ process (for fast LLM context) and rebuilt from DB on first access.
 
 import logging
 import threading
+import time
 from sqlalchemy.orm import Session as DBSession
 
 from core.memory_manager import ConversationMemory
 from db.models import ChatSession, Message
 
 log = logging.getLogger(__name__)
+
+
+def get_default_flow_state() -> dict:
+    """Default multi-turn action flow state (JSON-serializable)."""
+    return {
+        "pending_action": None,
+        "awaiting_confirmation": False,
+        "pending_fields": {},
+        "collected_fields": {},
+        "confirmation_payload": {},
+        "state_version": 0,
+    }
 
 
 class Session:
@@ -26,6 +39,13 @@ class Session:
         self.awaiting_confirmation = False
         self._db                   = db
         self._loaded               = False
+        self.flow                  = get_default_flow_state()
+        self.last_result: dict = {
+            "type": None,
+            "data": None,
+            "summary": None,
+            "timestamp": None,
+        }
 
     def _ensure_loaded(self):
         """Lazy-load last N messages from DB into memory buffer."""
@@ -51,7 +71,8 @@ class Session:
     def reset(self):
         self.memory.reset()
         self.awaiting_confirmation = False
-        # Delete messages from DB
+        self.flow = get_default_flow_state()
+        self.last_result = {"type": None, "data": None, "summary": None, "timestamp": None}
         self._db.query(Message).filter(Message.session_id == self.id).delete()
         self._db.commit()
         self._loaded = False
@@ -70,11 +91,10 @@ def get_session(session_id: str, db: DBSession, user_id: str | None = None) -> S
     with _lock:
         if session_id in _cache:
             session = _cache[session_id]
-            session._db = db          # refresh DB handle per request
+            session._db = db
             session._ensure_loaded()
             return session
 
-    # Check / create DB row
     row = db.query(ChatSession).filter(ChatSession.id == session_id).first()
     if row is None:
         if not user_id:
