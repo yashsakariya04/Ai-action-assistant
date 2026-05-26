@@ -1,0 +1,56 @@
+{
+  "family": "ai-action-assistant",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "3072",
+  "executionRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/ecsTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "ai-action-assistant",
+      "image": "<ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/ai-action-assistant:latest",
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": true,
+      "environment": [
+        { "name": "ENVIRONMENT", "value": "production" },
+        { "name": "PORT", "value": "8000" },
+        { "name": "CALENDAR_TIMEZONE", "value": "Asia/Kolkata" },
+        { "name": "CHROMA_DB_DIR", "value": "/app/chroma_db" },
+        { "name": "UPLOAD_DIR", "value": "/tmp/uploads" }
+      ],
+      "secrets": [
+        { "name": "GROQ_API_KEY_PRIMARY",    "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:ai-assistant/GROQ_API_KEY_PRIMARY" },
+        { "name": "GROQ_API_KEY_MEDIUM",     "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:ai-assistant/GROQ_API_KEY_MEDIUM" },
+        { "name": "GROQ_API_KEY_LIGHT",      "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:ai-assistant/GROQ_API_KEY_LIGHT" },
+        { "name": "JWT_SECRET_KEY",          "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:ai-assistant/JWT_SECRET_KEY" },
+        { "name": "EMAIL_USER",              "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:ai-assistant/EMAIL_USER" },
+        { "name": "NEWS_API_KEY",            "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:ai-assistant/NEWS_API_KEY" },
+        { "name": "OPENWEATHER_API_KEY",     "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:ai-assistant/OPENWEATHER_API_KEY" },
+        { "name": "DATABASE_URL",            "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:ai-assistant/DATABASE_URL" },
+        { "name": "GOOGLE_TOKEN_B64",        "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:ai-assistant/GOOGLE_TOKEN_B64" },
+        { "name": "GOOGLE_CREDENTIALS_B64",  "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:ai-assistant/GOOGLE_CREDENTIALS_B64" }
+      ],
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"],
+        "interval": 30,
+        "timeout": 10,
+        "retries": 3,
+        "startPeriod": 60
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/ai-action-assistant",
+          "awslogs-region": "<AWS_REGION>",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}

@@ -827,7 +827,11 @@ body::before{
 </div>
 
 <script>
-const BASE = window.location.origin;
+// API base URL — auto-detects same-origin (EC2) or cross-origin (S3+CloudFront)
+// To deploy frontend on S3: set window.API_BASE_URL = 'https://api.yourdomain.com' before this script
+const BASE = (typeof window.API_BASE_URL !== 'undefined' && window.API_BASE_URL)
+  ? window.API_BASE_URL
+  : window.location.origin;
 let messages = [];
 let isLoading = false;
 let selectedFile = null;

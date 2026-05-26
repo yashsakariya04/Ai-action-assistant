@@ -1,0 +1,29 @@
+version: 1.0
+runtime: python311
+
+build:
+  commands:
+    build:
+      - pip install --no-cache-dir "numpy<2"
+      - pip install --no-cache-dir torch==2.2.2 --index-url https://download.pytorch.org/whl/cpu
+      - pip install --no-cache-dir "sentence-transformers==3.0.1"
+      - grep -v "^torch" requirements.txt | grep -v "^sentence-transformers" | grep -v "^numpy" > requirements_slim.txt
+      - pip install --no-cache-dir -r requirements_slim.txt
+  env:
+    - name: PIP_NO_CACHE_DIR
+      value: "1"
+
+run:
+  command: python run_api.py
+  network:
+    port: 8000
+    env: PORT
+  env:
+    - name: ENVIRONMENT
+      value: production
+  health-check:
+    path: /health
+    interval: 10
+    timeout: 5
+    healthy-threshold: 1
+    unhealthy-threshold: 5

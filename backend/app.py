@@ -1,11 +1,11 @@
 """
-app.py — FastAPI application.
+app.py — FastAPI application (AWS production-ready).
 
 Routes:
-  GET  /           — Chat UI (index.html)
-  GET  /health     — Health check
+  GET  /           — Login page
+  GET  /health     — Health check (used by ALB / ECS / App Runner)
   POST /auth/register  — Sign up
-  POST /auth/login     — Sign in → JWT
+  POST /auth/login     — Sign in -> JWT
   GET  /auth/me        — Current user profile
   POST /chat       — Main chat endpoint (requires JWT)
   POST /reset      — Reset a session
@@ -22,9 +22,14 @@ from contextlib import asynccontextmanager
 from collections import defaultdict
 from typing import Optional
 
+import config
+config.setup_logging()
+
 from fastapi import FastAPI, Form, File, UploadFile, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from sqlalchemy.orm import Session as DBSession
 
 from backend.schemas import ChatResponse
@@ -33,16 +38,11 @@ from backend.google_auth import router as google_auth_router
 from db.database import get_db, init_db
 from db.models import User
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)-8s  %(name)s — %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
 log = logging.getLogger(__name__)
 
 # ── Rate limiting ─────────────────────────────────────────────
-RATE_LIMIT_REQUESTS = int(os.getenv("RATE_LIMIT_REQUESTS", "30"))
-RATE_LIMIT_WINDOW   = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
+RATE_LIMIT_REQUESTS = config.RATE_LIMIT_REQUESTS
+RATE_LIMIT_WINDOW   = config.RATE_LIMIT_WINDOW
 _rate_counters: dict = defaultdict(list)
 _rate_lock = threading.Lock()
 
@@ -59,13 +59,9 @@ def _is_rate_limited(session_id: str) -> bool:
 
 
 # ── Upload cleanup ────────────────────────────────────────────
-UPLOAD_MAX_AGE_SECONDS = int(os.getenv("UPLOAD_MAX_AGE_SECONDS", str(60 * 60)))
-
-
 def _cleanup_uploads():
-    import config
     try:
-        cutoff = time.time() - UPLOAD_MAX_AGE_SECONDS
+        cutoff = time.time() - config.UPLOAD_MAX_AGE_SECONDS
         for fname in os.listdir(config.UPLOAD_DIR):
             fpath = os.path.join(config.UPLOAD_DIR, fname)
             if os.path.isfile(fpath) and os.path.getmtime(fpath) < cutoff:
@@ -89,7 +85,6 @@ _startup_error = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _startup_error
-    import config
     try:
         config.validate()
         log.info("Config validated OK")
@@ -99,7 +94,6 @@ async def lifespan(app: FastAPI):
         yield
         return
 
-    # Init database tables
     try:
         init_db()
     except Exception as exc:
@@ -115,7 +109,8 @@ async def lifespan(app: FastAPI):
         log.warning("KB init failed (non-fatal): %s", exc)
 
     _start_cleanup_thread()
-    log.info("API ready [%s]", "Railway" if config.IS_RAILWAY else "Local")
+    env_label = "Railway" if config.IS_RAILWAY else ("AWS" if config.IS_AWS else "Local")
+    log.info("API ready [%s]", env_label)
     yield
     log.info("API shutting down.")
 
@@ -126,28 +121,44 @@ app = FastAPI(
     description="POST /chat with { message, session_id } or multipart with file.",
     version="3.0.0",
     lifespan=lifespan,
+    # Disable Swagger UI in production (re-enable by removing this or setting ENVIRONMENT != production)
+    docs_url="/docs" if not config.IS_PRODUCTION else None,
+    redoc_url=None,
 )
 
-_ALLOWED_ORIGINS = os.getenv(
-    "ALLOWED_ORIGINS",
-    "http://localhost:3000,http://localhost:5173,http://localhost:8000"
-).split(",")
+_ALLOWED_ORIGINS = [o.strip() for o in config.ALLOWED_ORIGINS.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_ALLOWED_ORIGINS,
-    allow_methods=["GET", "POST", "DELETE"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-Session-ID"],
 )
+
+
+# ── Global exception handlers ─────────────────────────────────
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    log.exception("Unhandled exception on %s %s", request.method, request.url.path)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
 
 app.include_router(auth_router)
 app.include_router(google_auth_router)
 
 
 # ── Voice routes ──────────────────────────────────────────────
-# STT: Groq Whisper (POST /voice/transcribe)
-# TTS: Browser Web Speech Synthesis API (client-side only, no backend needed)
-
 @app.post("/voice/transcribe")
 async def voice_transcribe(
     file: UploadFile = File(...),
@@ -159,10 +170,8 @@ async def voice_transcribe(
     return transcribe_audio(audio_bytes, filename=file.filename or "audio.webm")
 
 
-# ── Routes ────────────────────────────────────────────────────
-
+# ── Static page serving ───────────────────────────────────────
 def _serve_static(filename: str) -> HTMLResponse:
-    """Serve a file from the static/ directory."""
     candidates = [
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "static", filename),
         os.path.join("static", filename),
@@ -178,7 +187,6 @@ def _serve_static(filename: str) -> HTMLResponse:
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 def root_ui():
     return _serve_static("login.html")
-
 
 
 @app.get("/login", response_class=HTMLResponse, include_in_schema=False)
@@ -206,6 +214,7 @@ def about_page():
     return _serve_static("about.html")
 
 
+# ── Chat endpoint ─────────────────────────────────────────────
 @app.post("/chat", response_model=ChatResponse)
 async def chat(
     request: Request,
@@ -219,7 +228,6 @@ async def chat(
     if _startup_error:
         return ChatResponse(status="error", action="none", message=f"Configuration error: {_startup_error}")
 
-    import config
     from backend.chat_engine import process
     from backend.session_store import get_session, update_session_title
 
@@ -279,7 +287,7 @@ async def chat(
         final_sid = str(uuid.uuid4())
 
     if _is_rate_limited(final_sid):
-        raise HTTPException(status_code=429, detail=f"Rate limit exceeded.")
+        raise HTTPException(status_code=429, detail="Rate limit exceeded.")
 
     session = get_session(final_sid, db, user_id=str(current_user.id))
     response = process(final_message.strip(), session, file_path=file_path,
@@ -287,16 +295,13 @@ async def chat(
                        user_id=str(current_user.id), db=db)
     response.session_id = final_sid
 
-    # Persist messages to DB
     session.persist_message("user", final_message.strip())
     session.persist_message("assistant", response.message)
 
-    # Set session title from first user message
     from db.models import ChatSession
     row = db.query(ChatSession).filter(ChatSession.id == final_sid).first()
     if row and row.title == "New Conversation":
-        title = final_message.strip()[:60]
-        update_session_title(final_sid, title, db)
+        update_session_title(final_sid, final_message.strip()[:60], db)
 
     return response
 
@@ -312,7 +317,6 @@ def list_sessions(
 
 @app.get("/health")
 def health():
-    import config
     try:
         from core.vector_store import collection_count
         kb_docs = collection_count()
@@ -321,7 +325,7 @@ def health():
     return {
         "status":          "ok" if not _startup_error else "degraded",
         "startup_error":   _startup_error,
-        "environment":     "railway" if config.IS_RAILWAY else "local",
+        "environment":     "railway" if config.IS_RAILWAY else ("aws" if config.IS_AWS else "local"),
         "kb_docs":         kb_docs,
         "model":           config.GROQ_MODEL,
         "groq_configured": bool(config.GROQ_API_KEY),

@@ -32,3 +32,20 @@ logs/
 # IDE
 .vscode/
 .idea/
+
+# AWS deployment artifacts
+.aws/
+*.zip
+apprunner-bundle/
+elasticbeanstalk-bundle/
+ecs-params.yml
+samconfig.toml
+.aws-sam/
+cdk.out/
+cdk.context.json
+
+# Keep these deployment templates (not secrets)
+# ecs-task-definition.json  <- tracked, contains no secrets
+# apprunner.yaml            <- tracked
+# nginx.conf                <- tracked
+# AWS_DEPLOYMENT.md         <- tracked

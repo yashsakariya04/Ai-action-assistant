@@ -29,16 +29,31 @@ def run_rag(query: str, memory) -> str:
     """
     Answer a general query using:
     1. KB vector search (if relevant chunks found)
-    2. In-memory conversation context (summary + recent buffer)
+    2. In-memory conversation context
     3. LLM general knowledge as fallback
-
     """
+    # Capability queries are handled upstream in chat_engine — this is a safety net
+    from core.llm_service import CAPABILITY_PATTERNS
+    if any(pat in query.strip().lower() for pat in CAPABILITY_PATTERNS):
+        reply = (
+            "Here's what I can do:\n\n"
+            "• Send emails via Gmail\n"
+            "• Schedule Google Calendar events\n"
+            "• Fetch live weather for any city\n"
+            "• Get news headlines on any topic\n"
+            "• Search the web (DuckDuckGo + Wikipedia)\n"
+            "• Summarize uploaded documents (PDF, DOCX, XLSX, TXT) or URLs\n\n"
+            "Just tell me what you need."
+        )
+        memory.add("user", query)
+        memory.add("assistant", reply)
+        return reply
     # 1. Search KB for relevant chunks
     knowledge_context = ""
     kb_used = False
 
     try:
-        query_embedding = generate_embeddings([query])[0]
+        query_embedding = generate_embeddings([query], task_type="RETRIEVAL_QUERY")[0]
         kb_results = query_similar(query_embedding, top_k=5)
         relevant = [r for r in kb_results if r["score"] < config.SIMILARITY_THRESHOLD]
 

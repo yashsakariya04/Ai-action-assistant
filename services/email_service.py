@@ -91,18 +91,18 @@ def send_email(
         body    : Plain text email body
 
     Returns:
-        { "status": "success"|"error", "message": str }
+        { "status": "success"|"error", "message": str, "_execution_attempted": bool }
     """
     if isinstance(to, str):
         to = [to]
     to = [addr.strip() for addr in to if addr.strip()]
 
     if not to:
-        return {"status": "error", "message": "No recipient email address provided."}
+        return {"status": "error", "message": "No recipient email address provided.", "_execution_attempted": False}
     if not subject or not subject.strip():
-        return {"status": "error", "message": "Email subject cannot be empty."}
+        return {"status": "error", "message": "Email subject cannot be empty.", "_execution_attempted": False}
     if not body or not body.strip():
-        return {"status": "error", "message": "Email body cannot be empty."}
+        return {"status": "error", "message": "Email body cannot be empty.", "_execution_attempted": False}
 
     try:
         service = _get_gmail_service(user_id=user_id, db=db)
@@ -122,6 +122,8 @@ def send_email(
         msg.attach(MIMEText(html_content, "html"))
 
         raw  = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
+        # FIXED: A-4 — execution_attempted flag set only at the real API call site
+        execution_attempted = True
         sent = service.users().messages().send(
             userId="me", body={"raw": raw}
         ).execute()
@@ -130,14 +132,15 @@ def send_email(
         log.info("Email sent via Gmail API. ID: %s", message_id)
 
         return {
-            "status":  "success",
-            "message": f"Email sent successfully. Message ID: {message_id}",
+            "status":               "success",
+            "message":              f"Email sent successfully. Message ID: {message_id}",
+            "_execution_attempted": execution_attempted,
         }
 
     except PermissionError as exc:
-        return {"status": "error", "message": str(exc)}
+        return {"status": "error", "message": str(exc), "_execution_attempted": False}
     except FileNotFoundError as exc:
-        return {"status": "error", "message": str(exc)}
+        return {"status": "error", "message": str(exc), "_execution_attempted": False}
 
     except Exception as exc:
         err = str(exc).lower()
@@ -148,6 +151,7 @@ def send_email(
                     "Gmail permission denied. Delete token.pickle and run "
                     "'python calendar_auth.py' to re-authorize with Gmail scope."
                 ),
+                "_execution_attempted": True,
             }
         if "invalid_grant" in err or "token" in err:
             return {
@@ -156,6 +160,7 @@ def send_email(
                     "Gmail token expired. Delete token.pickle and run "
                     "'python calendar_auth.py' to re-authorize."
                 ),
+                "_execution_attempted": True,
             }
         log.exception("Gmail API send failed")
-        return {"status": "error", "message": f"Failed to send email: {exc}"}
+        return {"status": "error", "message": f"Failed to send email: {exc}", "_execution_attempted": True}

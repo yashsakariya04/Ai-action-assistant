@@ -27,8 +27,14 @@ from db.database import get_db
 from db.models import User, GoogleToken
 import config
 
-# Allow OAuth over plain HTTP on localhost
-if not os.getenv("RAILWAY_ENVIRONMENT"):
+# Allow OAuth over plain HTTP on localhost only — never on cloud
+_is_cloud = bool(
+    os.getenv("RAILWAY_ENVIRONMENT") or
+    os.getenv("AWS_EXECUTION_ENV") or
+    os.getenv("ECS_CONTAINER_METADATA_URI") or
+    os.getenv("AWS_REGION")
+)
+if not _is_cloud:
     os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
 log = logging.getLogger(__name__)

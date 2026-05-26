@@ -97,11 +97,18 @@ class ConversationMemory:
     def merge_action_arguments(self, new_plan: Dict) -> Dict:
         """
         Merge new extracted fields into the existing pending action.
-        - No pending action  → return new plan as-is
-        - rag incoming + real pending  → keep pending (follow-up info)
-        - Different real action  → replace entirely
-        - Same action  → merge non-null fields
+
+        Rules:
+        - No pending action           → return new plan as-is
+        - Incoming is a real action different from pending → replace entirely
+        - Incoming is rag AND pending is actively collecting missing fields
+          → treat user reply as field answer, keep pending (multi-turn collection)
+        - Incoming is rag AND pending has NO missing fields (was awaiting confirmation)
+          → the user sent a new unrelated message; clear pending and return rag
+          (FIXED: E-2, C-3 — prevents stale confirmed/completed actions from hijacking new intents)
+        - Same real action → merge non-null fields into pending
         """
+        # FIXED: E-2, C-3
         PASSTHROUGH = {"rag"}
 
         if not self.pending_action:
@@ -110,12 +117,22 @@ class ConversationMemory:
         pending_type  = self.pending_action.get("action")
         incoming_type = new_plan.get("action")
 
+        # Different real action — replace entirely
         if incoming_type not in PASSTHROUGH and incoming_type != pending_type:
             self.pending_action = new_plan
             return new_plan
 
+        # Incoming is rag — only keep pending if it still has missing fields to collect
         if incoming_type in PASSTHROUGH and pending_type not in PASSTHROUGH:
-            return self.pending_action
+            pending_missing = self.pending_action.get("missing_fields", [])
+            if pending_missing:
+                # Actively collecting — user reply is a field answer, keep pending
+                return self.pending_action
+            else:
+                # Pending was awaiting confirmation or already complete — do NOT recycle it
+                # The user sent a genuinely new message; clear stale state
+                self.pending_action = None
+                return new_plan
 
         # Same action — merge non-null fields
         existing = dict(self.pending_action.get("arguments", {}))

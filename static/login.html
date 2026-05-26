@@ -213,7 +213,6 @@ input::placeholder{color:var(--muted2);font-weight:300}
     <div class="logo-mark"></div>
     <div>
       <div class="logo-text">AI Action Assistant</div>
-      <div class="logo-sub">PRODUCTION · RAILWAY</div>
     </div>
   </div>
   <h1>Welcome back</h1>
@@ -239,6 +238,12 @@ input::placeholder{color:var(--muted2);font-weight:300}
 </div>
 
 <script>
+// API base URL — auto-detects same-origin (EC2) or cross-origin (S3+CloudFront)
+// To deploy frontend on S3: set window.API_BASE_URL = 'https://api.yourdomain.com' before this script
+const API_BASE = (typeof window.API_BASE_URL !== 'undefined' && window.API_BASE_URL)
+  ? window.API_BASE_URL
+  : window.location.origin;
+
 /* ── Sparkling particles ── */
 (function(){
   const c = document.getElementById('sparks'), ctx = c.getContext('2d');
@@ -289,7 +294,7 @@ async function handleLogin(e){
   const email=document.getElementById('email').value.trim();
   const password=document.getElementById('password').value;
   try{
-    const res=await fetch('/auth/login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({username:email,password})});
+    const res=await fetch(API_BASE+'/auth/login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({username:email,password})});
     const data=await res.json();
     if(!res.ok){
       const msg = res.status === 401 ? 'Invalid email or password. If you just set up the server, please create a new account.' : (data.detail||'Login failed.');
@@ -310,10 +315,10 @@ function showError(msg){const el=document.getElementById('error-msg');el.textCon
   const token = localStorage.getItem('ai_token');
   if (!token) return;
   try {
-    const res = await fetch('/auth/me', { headers: { 'Authorization': `Bearer ${token}` } });
-    if (res.ok) window.location.href = '/dashboard';
+    const res = await fetch(API_BASE+'/auth/me', { headers: { 'Authorization': `Bearer ${token}` } });
+    if (res.ok) window.location.href = API_BASE+'/dashboard';
     else { localStorage.removeItem('ai_token'); localStorage.removeItem('ai_user_id'); localStorage.removeItem('ai_email'); localStorage.removeItem('ai_name'); }
-  } catch { window.location.href = '/dashboard'; }
+  } catch { window.location.href = API_BASE+'/dashboard'; }
 })();
 </script>
 </body>

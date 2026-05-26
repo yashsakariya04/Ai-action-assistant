@@ -1,16 +1,12 @@
 # LLM
 groq>=0.9.0
 
+# Embeddings — Google Gemini API (free, no local model, zero RAM)
+google-generativeai>=0.7.0
+google-genai
+
 # Vector DB
 chromadb>=0.5.0
-
-# Embeddings
-# torch + sentence-transformers + numpy are installed separately
-# in Dockerfile with pinned versions — do NOT add them here
-sentence-transformers>=3.0.0
-
-# NumPy pinned to <2 for torch compatibility
-numpy<2
 
 # Web scraping + URL summarization
 beautifulsoup4>=4.12.0
@@ -41,6 +37,9 @@ dateparser>=1.2.0
 fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
 pydantic>=2.0.0
+
+# Production WSGI/ASGI server
+gunicorn>=21.2.0
 
 # MCP
 mcp[cli]>=1.0.0

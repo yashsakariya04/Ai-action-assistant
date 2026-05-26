@@ -89,24 +89,27 @@ def create_calendar_event(
             },
         }
 
+        # FIXED: A-4 — execution_attempted flag set only at the real API call site
+        execution_attempted = True
         created    = service.events().insert(calendarId="primary", body=event_body).execute()
         event_id   = created.get("id", "")
         event_link = created.get("htmlLink", "")
         log.info("Calendar event created: %s (%s)", title, event_id)
 
         return {
-            "status":     "success",
-            "message":    f"Event '{title}' created for {start_time.strftime('%B %d, %Y at %H:%M')} ({config.CALENDAR_TIMEZONE}).",
-            "event_id":   event_id,
-            "event_link": event_link,
+            "status":               "success",
+            "message":              f"Event '{title}' created for {start_time.strftime('%B %d, %Y at %H:%M')} ({config.CALENDAR_TIMEZONE}).",
+            "event_id":             event_id,
+            "event_link":           event_link,
+            "_execution_attempted": execution_attempted,
         }
 
     except PermissionError as exc:
-        return {"status": "error", "message": str(exc)}
+        return {"status": "error", "message": str(exc), "_execution_attempted": False}
     except FileNotFoundError as exc:
-        return {"status": "error", "message": str(exc)}
+        return {"status": "error", "message": str(exc), "_execution_attempted": False}
     except HttpError as exc:
-        return {"status": "error", "message": f"Google Calendar API error: {exc.reason}"}
+        return {"status": "error", "message": f"Google Calendar API error: {exc.reason}", "_execution_attempted": True}
     except Exception as exc:
         log.exception("Unexpected calendar error")
-        return {"status": "error", "message": f"Failed to create event: {exc}"}
+        return {"status": "error", "message": f"Failed to create event: {exc}", "_execution_attempted": True}
