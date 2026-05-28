@@ -137,18 +137,53 @@ def _format_response(response) -> str:
     return result
 
 
-def _get_session():
-    """Get or create the MCP server's dedicated session."""
+def _authenticate(user_token: str):
+    """Decode JWT and return the user object. Raises ValueError on failure."""
+    from jose import jwt as jose_jwt, JWTError
+    import os as _os
+    secret = _os.getenv("JWT_SECRET_KEY", "change-me-in-production-please")
+    try:
+        payload = jose_jwt.decode(user_token, secret, algorithms=["HS256"])
+        user_id = payload.get("sub")
+        if not user_id:
+            raise ValueError("Authentication required")
+    except JWTError:
+        raise ValueError("Authentication required")
+
+    from db.database import SessionLocal
+    from db.models import User
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
+        if not user:
+            raise ValueError("Authentication required")
+        return user
+    finally:
+        db.close()
+
+
+def _get_session(user_id: str):
+    """Get or create a per-user MCP session."""
     from backend.session_store import get_session
-    return get_session("mcp-server")
+    from db.database import SessionLocal
+    db = SessionLocal()
+    try:
+        return get_session(f"mcp-{user_id}", db, user_id=user_id)
+    finally:
+        db.close()
 
 
-def _process(message: str, file_path: str = None) -> str:
+def _process(message: str, user_id: str, file_path: str = None) -> str:
     """Run a message through the chat engine and return formatted result."""
     from backend.chat_engine import process
-    session  = _get_session()
-    response = process(message, session, file_path=file_path)
-    return _format_response(response)
+    from db.database import SessionLocal
+    db = SessionLocal()
+    try:
+        session  = _get_session(user_id)
+        response = process(message, session, file_path=file_path, user_id=user_id, db=db)
+        return _format_response(response)
+    finally:
+        db.close()
 
 
 # ═════════════════════════════════════════════════════════════
@@ -156,7 +191,7 @@ def _process(message: str, file_path: str = None) -> str:
 # ═════════════════════════════════════════════════════════════
 
 @mcp.tool()
-def chat(message: str) -> str:
+def chat(message: str, user_token: str) -> str:
     """
     Master brain — handles ALL types of conversations and tasks.
 
@@ -194,13 +229,15 @@ def chat(message: str) -> str:
       [ERROR | ...]         — something went wrong
 
     Args:
-        message: Any natural language input — question, task request,
-                 follow-up, confirmation, or casual conversation.
+        message:    Any natural language input — question, task request,
+                    follow-up, confirmation, or casual conversation.
+        user_token: JWT access token obtained from POST /auth/login.
 
     Returns:
         Formatted response with status code and content.
     """
-    return _process(message)
+    user = _authenticate(user_token)
+    return _process(message, str(user.id))
 
 
 # ═════════════════════════════════════════════════════════════
@@ -208,25 +245,21 @@ def chat(message: str) -> str:
 # ═════════════════════════════════════════════════════════════
 
 @mcp.tool()
-def weather_service(city: str) -> str:
+def weather_service(city: str, user_token: str) -> str:
     """
     Get current weather for any city in the world.
 
     Returns temperature, feels-like, humidity, wind speed, and visibility.
     Executes immediately — no confirmation needed.
 
-    Examples:
-      weather_service("Mumbai")
-      weather_service("London")
-      weather_service("New York")
-      weather_service("Tokyo")
-
     Args:
-        city: Name of the city to get weather for.
+        city:       Name of the city to get weather for.
+        user_token: JWT access token obtained from POST /auth/login.
 
     Returns:
         Formatted weather report with current conditions.
     """
+    _authenticate(user_token)
     from services.weather_service import fetch_weather
 
     if not city or not city.strip():
@@ -240,25 +273,21 @@ def weather_service(city: str) -> str:
 
 
 @mcp.tool()
-def web_search_service(query: str) -> str:
+def web_search_service(query: str, user_token: str) -> str:
     """
     Search the internet for any topic, person, event, or question.
 
     Uses DuckDuckGo with Wikipedia and LLM fallback strategies.
     Executes immediately — no confirmation needed.
 
-    Examples:
-      web_search_service("latest developments in quantum computing")
-      web_search_service("Elon Musk net worth 2025")
-      web_search_service("Python FastAPI tutorial")
-      web_search_service("best restaurants in Ahmedabad")
-
     Args:
-        query: Search query — any topic or question.
+        query:      Search query — any topic or question.
+        user_token: JWT access token obtained from POST /auth/login.
 
     Returns:
         Top search results with titles, snippets, and source URLs.
     """
+    _authenticate(user_token)
     from services.web_search_service import search_web
 
     if not query or not query.strip():
@@ -273,6 +302,7 @@ def web_search_service(query: str) -> str:
 
 @mcp.tool()
 def summarizer_service(
+    user_token: str,
     url: str = "",
     text: str = "",
     file_path: str = "",
@@ -283,27 +313,16 @@ def summarizer_service(
     Provide exactly ONE of: url, text, or file_path.
     Executes immediately — no confirmation needed.
 
-    SUMMARIZE A URL:
-      summarizer_service(url="https://en.wikipedia.org/wiki/Artificial_intelligence")
-      summarizer_service(url="https://techcrunch.com/some-article")
-
-    SUMMARIZE RAW TEXT:
-      summarizer_service(text="The quick brown fox... [long text here]")
-
-    SUMMARIZE A FILE (provide server-side path):
-      summarizer_service(file_path="/tmp/uploads/document.pdf")
-      summarizer_service(file_path="/tmp/uploads/report.docx")
-
-    SUPPORTED FILE TYPES: PDF, DOCX, XLSX, TXT
-
     Args:
-        url:       Full URL starting with http:// or https://
-        text:      Raw text content to summarize (paste directly)
-        file_path: Absolute path to an uploaded file on the server
+        user_token: JWT access token obtained from POST /auth/login.
+        url:        Full URL starting with http:// or https://
+        text:       Raw text content to summarize (paste directly)
+        file_path:  Absolute path to an uploaded file on the server
 
     Returns:
         A structured summary with key points and conclusion.
     """
+    _authenticate(user_token)
     from services.summarizer_service import summarize
 
     # Validate at least one source is provided
@@ -327,43 +346,19 @@ def summarizer_service(
 
 
 @mcp.tool()
-def email_service(message: str) -> str:
+def email_service(message: str, user_token: str) -> str:
     """
     Full email workflow — draft, preview, and send emails via Gmail API.
 
-    Handles the complete multi-turn email workflow through conversation.
-    Requires explicit confirmation before sending — nothing goes out automatically.
-
-    STARTING A NEW EMAIL:
-      "send a congratulations email to Ravi for his promotion"
-      "email the team about tomorrow's meeting cancellation"
-      "write a follow-up to the client about the proposal"
-
-    PROVIDING MISSING INFORMATION (when asked):
-      "ravi.sharma@company.com"          ← providing email address
-      "his email is john@example.com"    ← providing email address
-
-    MODIFYING BEFORE SENDING:
-      "change the subject to 'Important Update'"
-      "make the tone more formal"
-      "add a line about the deadline"
-
-    CONFIRMING OR CANCELLING:
-      "yes" / "send it" / "looks good"  ← sends the email
-      "no" / "cancel" / "don't send"    ← cancels
-
-    SAFETY GUARANTEES:
-      - Email addresses MUST come from you — never invented by AI
-      - Full email body shown for review before sending
-      - Nothing is sent without your explicit confirmation
-
     Args:
-        message: Natural language message at any stage of the email workflow.
+        message:    Natural language message at any stage of the email workflow.
+        user_token: JWT access token obtained from POST /auth/login.
 
     Returns:
         Response showing current state: missing info needed, preview, or result.
     """
-    session = _get_session()
+    user = _authenticate(user_token)
+    session = _get_session(str(user.id))
 
     # Smart routing: prepend email intent if no keyword found and not mid-workflow
     if (not session.awaiting_confirmation
@@ -374,49 +369,23 @@ def email_service(message: str) -> str:
                    ("mail", "email", "send", "write to", "compose", "draft")):
             message = f"send an email: {message}"
 
-    return _process(message)
+    return _process(message, str(user.id))
 
 
 @mcp.tool()
-def calendar_service(message: str) -> str:
+def calendar_service(message: str, user_token: str) -> str:
     """
     Full calendar workflow — schedule and create Google Calendar events.
 
-    Handles the complete multi-turn scheduling workflow through conversation.
-    Requires explicit confirmation before creating — nothing is created automatically.
-
-    SCHEDULING AN EVENT:
-      "schedule a team standup every Monday at 9am"
-      "book a dentist appointment tomorrow at 2pm"
-      "create a birthday party event this Saturday at 6pm"
-      "add a project review meeting next Friday at 3pm for 2 hours"
-
-    PROVIDING MISSING INFORMATION (when asked):
-      "the title is Quarterly Review"
-      "make it 2 hours"
-      "location is Conference Room A"
-      "add a description about Q4 goals"
-
-    MODIFYING BEFORE CREATING:
-      "change the time to 4pm"
-      "make it an all-day event"
-
-    CONFIRMING OR CANCELLING:
-      "yes" / "schedule it" / "create it"  ← creates the event
-      "no" / "cancel"                      ← cancels
-
-    SAFETY GUARANTEES:
-      - Dates must be real and in the future — never fabricated
-      - Full event details shown for review before creation
-      - Nothing is created without your explicit confirmation
-
     Args:
-        message: Natural language message at any stage of the calendar workflow.
+        message:    Natural language message at any stage of the calendar workflow.
+        user_token: JWT access token obtained from POST /auth/login.
 
     Returns:
         Response showing current state: missing info needed, preview, or result.
     """
-    session = _get_session()
+    user = _authenticate(user_token)
+    session = _get_session(str(user.id))
 
     # Smart routing: prepend calendar intent if no keyword found and not mid-workflow
     if (not session.awaiting_confirmation
@@ -427,41 +396,29 @@ def calendar_service(message: str) -> str:
                     "appointment", "create", "add")):
             message = f"schedule a calendar event: {message}"
 
-    return _process(message)
+    return _process(message, str(user.id))
 
 
 @mcp.tool()
-def news_service(topic: str = "general") -> str:
+def news_service(user_token: str, topic: str = "general") -> str:
     """
     Fetch the latest news headlines on any topic.
 
-    Returns up to 5 recent articles with title, description, source, and date.
-    Executes immediately — no confirmation needed.
-
-    TOPIC EXAMPLES:
-      news_service("technology")
-      news_service("India cricket")
-      news_service("artificial intelligence")
-      news_service("business")
-      news_service("Elon Musk")
-      news_service()                 ← top general headlines
-
-    VALID CATEGORIES (for top headlines by category):
-      business, entertainment, general, health, science, sports, technology
-
     Args:
-        topic: News topic, keyword, or category. Defaults to "general".
+        user_token: JWT access token obtained from POST /auth/login.
+        topic:      News topic, keyword, or category. Defaults to "general".
 
     Returns:
         Formatted list of news articles with source and publication date.
     """
+    user = _authenticate(user_token)
     message = topic.strip() if topic.strip() else "general"
 
     # Ensure routing to news action
     if not any(w in message.lower() for w in ("news", "headlines", "latest")):
         message = f"get latest news about: {message}"
 
-    return _process(message)
+    return _process(message, str(user.id))
 
 
 # ═════════════════════════════════════════════════════════════
@@ -469,26 +426,24 @@ def news_service(topic: str = "general") -> str:
 # ═════════════════════════════════════════════════════════════
 
 @mcp.tool()
-def reset_conversation() -> str:
+def reset_conversation(user_token: str) -> str:
     """
     Reset the conversation — clears all memory and pending actions.
 
-    Use this when:
-      - Starting a completely new task
-      - The assistant is stuck on old context
-      - You want to cancel everything and start fresh
-      - Switching between very different tasks
-
-    This clears:
-      - Conversation history and memory summary
-      - Any pending email or calendar workflows
-      - Awaiting confirmation state
+    Args:
+        user_token: JWT access token obtained from POST /auth/login.
 
     Returns:
         Confirmation that session has been reset.
     """
+    user = _authenticate(user_token)
     from backend.session_store import reset_session
-    reset_session("mcp-server")
+    from db.database import SessionLocal
+    db = SessionLocal()
+    try:
+        reset_session(f"mcp-{user.id}", db)
+    finally:
+        db.close()
     return (
         "[SUCCESS | RESET]\n"
         f"{'-' * 60}\n"
@@ -499,26 +454,17 @@ def reset_conversation() -> str:
 
 
 @mcp.tool()
-def get_system_status() -> str:
+def get_system_status(user_token: str) -> str:
     """
     Check the health and configuration status of all services.
 
-    Returns the status of:
-      - LLM model (Groq)
-      - Knowledge base (ChromaDB document count)
-      - Email service (Gmail API)
-      - Calendar service (Google OAuth)
-      - News service (NewsAPI)
-      - Weather service (OpenWeatherMap)
-      - Web search service (DuckDuckGo)
-      - Summarizer service
-
-    Use this to verify everything is configured correctly before
-    running important tasks.
+    Args:
+        user_token: JWT access token obtained from POST /auth/login.
 
     Returns:
         JSON with detailed status of all services.
     """
+    _authenticate(user_token)
     import config
     from core.vector_store import collection_count
 

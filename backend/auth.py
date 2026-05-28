@@ -1,9 +1,10 @@
 """
 backend/auth.py — Authentication routes.
 
-POST /auth/register  — create account
-POST /auth/login     — returns JWT access token
+POST /auth/register  — create account (sets HttpOnly cookie + returns body for compat)
+POST /auth/login     — returns JWT as HttpOnly cookie + JSON body
 GET  /auth/me        — returns current user profile (requires token)
+POST /auth/logout    — clears auth_token cookie
 """
 
 import os
@@ -12,9 +13,11 @@ from datetime import datetime, timedelta, timezone
 
 import bcrypt
 from jose import JWTError, jwt
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from db.database import get_db
@@ -27,8 +30,23 @@ SECRET_KEY      = os.getenv("JWT_SECRET_KEY", "change-me-in-production-please")
 ALGORITHM       = "HS256"
 TOKEN_EXPIRE_H  = int(os.getenv("JWT_EXPIRE_HOURS", "72"))
 
+_IS_PRODUCTION = bool(
+    os.getenv("RAILWAY_ENVIRONMENT") or
+    os.getenv("AWS_EXECUTION_ENV") or
+    os.getenv("ECS_CONTAINER_METADATA_URI") or
+    os.getenv("AWS_REGION") or
+    os.getenv("ENVIRONMENT") == "production"
+)
+if _IS_PRODUCTION and SECRET_KEY == "change-me-in-production-please":
+    raise EnvironmentError(
+        "JWT_SECRET_KEY must be changed from the default insecure value before running in production."
+    )
+
 router = APIRouter(prefix="/auth", tags=["auth"])
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+_limiter = Limiter(key_func=get_remote_address)
+
+# Optional bearer — won't raise 401 if header is absent (we fall back to cookie)
+_optional_bearer = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 
 
 # ── Schemas ───────────────────────────────────────────────────
@@ -36,6 +54,13 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
     name: str | None = None
+
+    @field_validator("password")
+    @classmethod
+    def strong_password(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters.")
+        return v
 
 
 class TokenResponse(BaseModel):
@@ -63,7 +88,7 @@ class UpdateProfileRequest(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────
 def _hash_password(plain: str) -> str:
-    return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
+    return bcrypt.hashpw(plain.encode(), bcrypt.gensalt(rounds=12)).decode()
 
 
 def _verify_password(plain: str, hashed: str) -> bool:
@@ -75,30 +100,57 @@ def _create_token(user_id: str, email: str) -> str:
     return jwt.encode({"sub": user_id, "email": email, "exp": expire}, SECRET_KEY, algorithm=ALGORITHM)
 
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
-    """FastAPI dependency — validates JWT and returns the User row."""
+def _set_auth_cookie(response: Response, token: str) -> None:
+    import config as _cfg
+    response.set_cookie(
+        key="auth_token",
+        value=token,
+        httponly=True,
+        secure=_cfg.IS_PRODUCTION,
+        samesite="strict",
+        max_age=TOKEN_EXPIRE_H * 3600,
+    )
+
+
+def _decode_token(token: str, db: Session) -> User:
     credentials_exc = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid or expired token",
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload  = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id  = payload.get("sub")
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
         if not user_id:
             raise credentials_exc
     except JWTError:
         raise credentials_exc
-
     user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
     if not user:
         raise credentials_exc
     return user
 
 
+def get_current_user(
+    bearer_token: str | None = Depends(_optional_bearer),
+    auth_token: str | None = Cookie(default=None),
+    db: Session = Depends(get_db),
+) -> User:
+    """FastAPI dependency — validates JWT from Authorization header first, then cookie."""
+    token = bearer_token or auth_token
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return _decode_token(token, db)
+
+
 # ── Routes ────────────────────────────────────────────────────
 @router.post("/register", response_model=TokenResponse, status_code=201)
-def register(body: RegisterRequest, db: Session = Depends(get_db)):
+@_limiter.limit("10/minute")
+def register(request: Request, body: RegisterRequest, response: Response, db: Session = Depends(get_db)):
     if db.query(User).filter(User.email == body.email).first():
         raise HTTPException(status_code=409, detail="Email already registered.")
 
@@ -113,17 +165,27 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
     log.info("New user registered: %s", user.email)
 
     token = _create_token(str(user.id), user.email)
+    _set_auth_cookie(response, token)
     return TokenResponse(access_token=token, user_id=str(user.id), email=user.email, name=user.name)
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+@_limiter.limit("10/minute")
+def login(request: Request, response: Response, form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == form.username, User.is_active == True).first()
     if not user or not _verify_password(form.password, user.password):
         raise HTTPException(status_code=401, detail="Invalid email or password.")
 
     token = _create_token(str(user.id), user.email)
+    _set_auth_cookie(response, token)
     return TokenResponse(access_token=token, user_id=str(user.id), email=user.email, name=user.name)
+
+
+@router.post("/logout")
+def logout(response: Response):
+    """Clear the auth_token cookie to log the user out."""
+    response.delete_cookie("auth_token")
+    return {"status": "ok", "message": "Logged out successfully."}
 
 
 @router.get("/me", response_model=UserProfile)

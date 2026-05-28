@@ -270,10 +270,8 @@ function getInitials(name) {
 }
 
 async function loadProfile() {
-  const token = localStorage.getItem('ai_token');
-  if (!token) { window.location.href = '/login'; return; }
   try {
-    const res = await fetch('/auth/me', { headers: { 'Authorization': `Bearer ${token}` } });
+    const res = await fetch('/auth/me', { credentials: 'include' });
     if (!res.ok) { window.location.href = '/login'; return; }
     const u = await res.json();
 
@@ -293,9 +291,8 @@ async function loadProfile() {
 }
 
 async function loadGoogleStatus() {
-  const token = localStorage.getItem('ai_token');
   try {
-    const res = await fetch('/auth/google/status', { headers: { 'Authorization': `Bearer ${token}` } });
+    const res = await fetch('/auth/google/status', { credentials: 'include' });
     const data = await res.json();
     const btn = document.getElementById('google-action-btn');
     const statusText = document.getElementById('google-status-text');
@@ -316,7 +313,6 @@ async function loadGoogleStatus() {
 }
 
 async function saveProfile() {
-  const token = localStorage.getItem('ai_token');
   const btn = document.getElementById('save-btn');
   btn.disabled = true; btn.textContent = 'Saving…';
   try {
@@ -326,7 +322,8 @@ async function saveProfile() {
     };
     const res = await fetch('/auth/me', {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error();
@@ -343,10 +340,10 @@ function promptAvatarUrl() {
   const current = localStorage.getItem('ai_avatar') || '';
   const url = prompt('Enter image URL for your avatar (leave blank to remove):', current);
   if (url === null) return; // cancelled
-  const token = localStorage.getItem('ai_token');
   fetch('/auth/me', {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ avatar_url: url.trim() || null }),
   }).then(r => r.json()).then(u => {
     renderAvatar(u.avatar_url, u.name);
@@ -358,17 +355,16 @@ function promptAvatarUrl() {
 function handleGoogleAction() {
   if (googleConnected) {
     if (!confirm('Disconnect your Google account? This will disable Gmail and Calendar features.')) return;
-    const token = localStorage.getItem('ai_token');
-    fetch('/auth/google/disconnect', { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } })
+    fetch('/auth/google/disconnect', { method: 'DELETE', credentials: 'include' })
       .then(() => { showToast('Google account disconnected'); loadGoogleStatus(); });
   } else {
-    const token = localStorage.getItem('ai_token');
-    window.location.href = `/auth/google/connect?token=${token}&return_to=profile`;
+    window.location.href = `/auth/google/connect?token=cookie&return_to=profile`;
   }
 }
 
-function logout() {
-  ['ai_token','ai_user_id','ai_email','ai_name','ai_avatar'].forEach(k => localStorage.removeItem(k));
+async function logout() {
+  ['ai_user_id','ai_email','ai_name','ai_avatar'].forEach(k => localStorage.removeItem(k));
+  await fetch('/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {});
   window.location.href = '/login';
 }
 

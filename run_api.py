@@ -24,7 +24,6 @@ if __name__ == "__main__":
     print("Starting AI Action Assistant", file=sys.stderr)
     print(f"Python: {sys.version}", file=sys.stderr)
     print(f"PORT: {os.environ.get('PORT', '8000')}", file=sys.stderr)
-    print(f"RAILWAY: {bool(os.environ.get('RAILWAY_ENVIRONMENT'))}", file=sys.stderr)
     print(f"GROQ_API_KEY set: {bool(os.environ.get('GROQ_API_KEY'))}", file=sys.stderr)
     print("=" * 50, file=sys.stderr)
 
@@ -35,12 +34,6 @@ if __name__ == "__main__":
         print(f"  numpy: {numpy.__version__}", file=sys.stderr)
     except Exception as exc:
         print(f"  numpy FAILED: {exc}", file=sys.stderr)
-
-    try:
-        import torch
-        print(f"  torch: {torch.__version__}", file=sys.stderr)
-    except Exception as exc:
-        print(f"  torch FAILED: {exc}", file=sys.stderr)
 
     try:
         import chromadb

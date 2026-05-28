@@ -78,9 +78,13 @@ class Session:
         self._loaded = False
 
 
-# ── In-process cache (avoids re-querying DB on every request) ─
-_cache: dict[str, Session] = {}
-_lock  = threading.Lock()
+# ── In-process cache with TTL eviction (2-hour idle) ──────────
+try:
+    from cachetools import TTLCache
+    _cache = TTLCache(maxsize=10_000, ttl=7200)
+except ImportError:
+    _cache: dict[str, "Session"] = {}
+_lock = threading.Lock()
 
 
 def get_session(session_id: str, db: DBSession, user_id: str | None = None) -> Session:

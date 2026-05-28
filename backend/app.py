@@ -3,15 +3,17 @@ app.py — FastAPI application (AWS production-ready).
 
 Routes:
   GET  /           — Login page
-  GET  /health     — Health check (used by ALB / ECS / App Runner)
+  GET  /health     — Health check (public — status only)
+  GET  /health/detail — Detailed health (requires auth)
   POST /auth/register  — Sign up
-  POST /auth/login     — Sign in -> JWT
+  POST /auth/login     — Sign in -> JWT (HttpOnly cookie)
   GET  /auth/me        — Current user profile
   POST /chat       — Main chat endpoint (requires JWT)
   POST /reset      — Reset a session
   GET  /sessions   — List user's chat sessions
 """
 
+import asyncio
 import sys
 import logging
 import os
@@ -28,9 +30,15 @@ config.setup_logging()
 from fastapi import FastAPI, Form, File, UploadFile, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy.orm import Session as DBSession
+
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from backend.schemas import ChatResponse
 from backend.auth import get_current_user, router as auth_router
@@ -40,21 +48,32 @@ from db.models import User
 
 log = logging.getLogger(__name__)
 
-# ── Rate limiting ─────────────────────────────────────────────
+# ── SlowAPI rate limiter (for auth endpoints — IP-based) ──────
+limiter = Limiter(key_func=get_remote_address)
+
+# ── Rate limiting (chat — keyed on user ID) ───────────────────
 RATE_LIMIT_REQUESTS = config.RATE_LIMIT_REQUESTS
 RATE_LIMIT_WINDOW   = config.RATE_LIMIT_WINDOW
-_rate_counters: dict = defaultdict(list)
+
+try:
+    from cachetools import TTLCache
+    _rate_counters = TTLCache(maxsize=50_000, ttl=120)
+except ImportError:
+    _rate_counters = defaultdict(list)
+
 _rate_lock = threading.Lock()
 
 
-def _is_rate_limited(session_id: str) -> bool:
+def _is_rate_limited(user_id: str) -> bool:
     now = time.time()
     with _rate_lock:
-        timestamps = _rate_counters[session_id]
-        _rate_counters[session_id] = [t for t in timestamps if now - t < RATE_LIMIT_WINDOW]
-        if len(_rate_counters[session_id]) >= RATE_LIMIT_REQUESTS:
+        timestamps = _rate_counters.get(user_id, [])
+        timestamps = [t for t in timestamps if now - t < RATE_LIMIT_WINDOW]
+        if len(timestamps) >= RATE_LIMIT_REQUESTS:
+            _rate_counters[user_id] = timestamps
             return True
-        _rate_counters[session_id].append(now)
+        timestamps.append(now)
+        _rate_counters[user_id] = timestamps
         return False
 
 
@@ -115,6 +134,19 @@ async def lifespan(app: FastAPI):
     log.info("API shutting down.")
 
 
+# ── Security headers middleware ────────────────────────────────
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"]  = "nosniff"
+        response.headers["X-Frame-Options"]         = "DENY"
+        response.headers["Referrer-Policy"]         = "no-referrer"
+        response.headers["Permissions-Policy"]      = "geolocation=(), microphone=(self)"
+        if config.IS_PRODUCTION:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+
+
 # ── App ───────────────────────────────────────────────────────
 app = FastAPI(
     title="AI Action Assistant",
@@ -125,6 +157,9 @@ app = FastAPI(
     docs_url="/docs" if not config.IS_PRODUCTION else None,
     redoc_url=None,
 )
+
+app.state.limiter = limiter
+app.add_middleware(SecurityHeadersMiddleware)
 
 _ALLOWED_ORIGINS = [o.strip() for o in config.ALLOWED_ORIGINS.split(",") if o.strip()]
 
@@ -148,17 +183,28 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     return JSONResponse(status_code=422, content={"detail": str(exc)})
 
 
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(status_code=429, content={"detail": "Too many requests. Please slow down."})
+
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     log.exception("Unhandled exception on %s %s", request.method, request.url.path)
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
+_static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "static")
+if os.path.isdir(_static_dir):
+    app.mount("/static", StaticFiles(directory=_static_dir), name="static")
+
 app.include_router(auth_router)
 app.include_router(google_auth_router)
 
 
 # ── Voice routes ──────────────────────────────────────────────
+MAX_AUDIO_BYTES = int(os.getenv("MAX_AUDIO_BYTES", str(5 * 1024 * 1024)))  # 5 MB default
+
 @app.post("/voice/transcribe")
 async def voice_transcribe(
     file: UploadFile = File(...),
@@ -166,7 +212,9 @@ async def voice_transcribe(
 ):
     """POST /voice/transcribe — audio file -> text via Groq Whisper."""
     from services.voice_service import transcribe_audio
-    audio_bytes = await file.read()
+    audio_bytes = await file.read(MAX_AUDIO_BYTES + 1)
+    if len(audio_bytes) > MAX_AUDIO_BYTES:
+        raise HTTPException(status_code=413, detail=f"Audio file too large. Max {MAX_AUDIO_BYTES // (1024*1024)} MB.")
     return transcribe_audio(audio_bytes, filename=file.filename or "audio.webm")
 
 
@@ -286,13 +334,18 @@ async def chat(
     if not final_sid or not final_sid.strip():
         final_sid = str(uuid.uuid4())
 
-    if _is_rate_limited(final_sid):
+    if _is_rate_limited(str(current_user.id)):
         raise HTTPException(status_code=429, detail="Rate limit exceeded.")
 
     session = get_session(final_sid, db, user_id=str(current_user.id))
-    response = process(final_message.strip(), session, file_path=file_path,
-                       selected_services=final_services or [],
-                       user_id=str(current_user.id), db=db)
+    response = await asyncio.get_event_loop().run_in_executor(
+        None,
+        lambda: process(
+            final_message.strip(), session, file_path=file_path,
+            selected_services=final_services or [],
+            user_id=str(current_user.id), db=db,
+        ),
+    )
     response.session_id = final_sid
 
     session.persist_message("user", final_message.strip())
@@ -317,6 +370,13 @@ def list_sessions(
 
 @app.get("/health")
 def health():
+    """Public health check — returns status only."""
+    return {"status": "ok" if not _startup_error else "degraded"}
+
+
+@app.get("/health/detail")
+def health_detail(current_user: User = Depends(get_current_user)):
+    """Detailed health info — requires authentication."""
     try:
         from core.vector_store import collection_count
         kb_docs = collection_count()
@@ -339,6 +399,7 @@ async def reset(
     db: DBSession = Depends(get_db),
 ):
     from backend.session_store import reset_session
+    from db.models import ChatSession
     try:
         body       = await request.json()
         session_id = body.get("session_id")
@@ -346,5 +407,11 @@ async def reset(
         session_id = None
     if not session_id:
         return {"status": "error", "message": "session_id is required."}
+    row = db.query(ChatSession).filter(
+        ChatSession.id == session_id,
+        ChatSession.user_id == str(current_user.id),
+    ).first()
+    if not row:
+        raise HTTPException(status_code=403, detail="Session not found or access denied.")
     reset_session(session_id, db)
     return {"status": "ok", "message": "Session reset.", "session_id": session_id}

@@ -6,6 +6,7 @@ Falls back to SQLite for local dev if DATABASE_URL is not set.
 """
 
 import os
+import re
 import logging
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
@@ -26,7 +27,7 @@ if not DATABASE_URL:
 
 _connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 
-engine = engine = create_engine(DATABASE_URL, connect_args=_connect_args, pool_pre_ping=True)
+engine = create_engine(DATABASE_URL, connect_args=_connect_args, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 
@@ -37,6 +38,10 @@ def init_db():
     log.info("Database tables ready.")
 
 
+_VALID_TABLES = {"users", "sessions", "messages", "google_tokens"}
+_VALID_TYPES  = {"VARCHAR(500)", "VARCHAR(300)", "TEXT", "BOOLEAN", "INTEGER"}
+
+
 def _migrate_columns():
     """Add new columns to existing tables if they don't exist (SQLite + PostgreSQL safe)."""
     migrations = [
@@ -45,8 +50,12 @@ def _migrate_columns():
     ]
     with engine.connect() as conn:
         for table, column, col_type in migrations:
+            assert table in _VALID_TABLES, f"Unknown table: {table}"
+            assert col_type in _VALID_TYPES, f"Unknown col type: {col_type}"
+            assert re.fullmatch(r"[a-z_]{1,64}", column), f"Invalid column name: {column}"
             try:
-                conn.execute(__import__('sqlalchemy').text(
+                from sqlalchemy import text as _text
+                conn.execute(_text(
                     f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"
                 ))
                 conn.commit()

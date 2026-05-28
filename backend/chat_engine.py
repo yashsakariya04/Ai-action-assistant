@@ -776,7 +776,7 @@ def _execute_plan(plan: dict, user_id: str = None, db=None) -> ChatResponse:
             return _r("error", "news", f"No news found for '{topic}'.")
         count = len(articles)
         summary_msg = f"Latest {count} headline{'s' if count != 1 else ''} on '{topic}'."
-        return _r("success", "news", summary_msg,
+        result_news = _r("success", "news", summary_msg,
                   news_articles=[
                       NewsArticle(
                           title=a["title"],
@@ -787,15 +787,28 @@ def _execute_plan(plan: dict, user_id: str = None, db=None) -> ChatResponse:
                       )
                       for a in articles
                   ])
+        try:
+            _require_real_execution("news", {"status": "success", "message": summary_msg})
+        except RuntimeError as exc:
+            log.error(str(exc))
+        return result_news
 
     if action == "weather":
         result = fetch_weather(args.get("city", ""))
+        try:
+            _require_real_execution("weather", result)
+        except RuntimeError as exc:
+            log.error(str(exc))
         if result["status"] == "success":
             return _r("success", "weather", result["message"])
         return _r("error", "weather", result["message"])
 
     if action == "web_search":
         result = search_web(args.get("query", ""))
+        try:
+            _require_real_execution("web_search", result)
+        except RuntimeError as exc:
+            log.error(str(exc))
         if result["status"] == "success":
             return _r("success", "web_search", result["message"])
         return _r("error", "web_search", result["message"])

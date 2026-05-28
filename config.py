@@ -166,8 +166,25 @@ def validate():
             "Get a free key at https://aistudio.google.com/app/apikey"
         )
     if IS_PRODUCTION and JWT_SECRET_KEY == "change-me-in-production-please":
-        import warnings
-        warnings.warn("JWT_SECRET_KEY is using the default insecure value in production!", stacklevel=2)
+        raise EnvironmentError(
+            "JWT_SECRET_KEY must be changed from the default insecure value before running in production."
+        )
+
+    token_enc_key = os.getenv("TOKEN_ENCRYPTION_KEY", "")
+    if IS_PRODUCTION:
+        if not token_enc_key:
+            raise EnvironmentError(
+                "TOKEN_ENCRYPTION_KEY must be set in production. "
+                "Generate one with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+            )
+        try:
+            from cryptography.fernet import Fernet
+            Fernet(token_enc_key.encode())
+        except Exception:
+            raise EnvironmentError(
+                "TOKEN_ENCRYPTION_KEY is not a valid Fernet key (must be 32-byte URL-safe base64). "
+                "Generate one with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+            )
 
     os.makedirs(UPLOAD_DIR, exist_ok=True)
     os.makedirs(CHROMA_DB_DIR, exist_ok=True)

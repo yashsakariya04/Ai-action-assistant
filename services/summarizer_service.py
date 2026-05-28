@@ -193,6 +193,12 @@ def _extract_from_url(url: str) -> Dict:
         }
 
     try:
+        from core.url_safety import assert_safe_url
+        try:
+            assert_safe_url(url)
+        except ValueError as ssrf_exc:
+            return {"success": False, "message": str(ssrf_exc)}
+
         import requests
         from bs4 import BeautifulSoup
 

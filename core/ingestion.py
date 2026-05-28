@@ -19,6 +19,8 @@ _HEADERS = {"User-Agent": "RAG Knowledge Bot/1.0 (educational project)"}
 
 
 def fetch_url_content(url: str) -> str:
+    from core.url_safety import assert_safe_url
+    assert_safe_url(url)
     try:
         response = requests.get(url, headers=_HEADERS, timeout=20)
         response.raise_for_status()

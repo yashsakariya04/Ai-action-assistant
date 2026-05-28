@@ -53,3 +53,12 @@ bcrypt>=4.0.0
 python-jose[cryptography]>=3.3.0
 python-multipart>=0.0.9
 email-validator>=2.0.0
+
+# Token encryption (CRIT-2)
+cryptography>=42.0.0
+
+# Rate limiting (HIGH-3)
+slowapi>=0.1.9
+
+# TTL cache — session store + rate counter eviction (MED-2)
+cachetools>=5.3.0
